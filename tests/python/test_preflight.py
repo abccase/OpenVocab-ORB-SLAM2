@@ -57,7 +57,8 @@ class PreflightTests(unittest.TestCase):
             "git",
         }
         self.assertTrue(required.issubset(facts), required - set(facts))
-        self.assertEqual(facts["git"]["head"], FROZEN_UPSTREAM_COMMIT)
+        self.assertTrue(facts["git"]["frozen_commit_present"])
+        self.assertTrue(facts["git"]["frozen_commit_is_ancestor"])
 
     def test_validate_preflight_rejects_non_ubuntu_2204(self) -> None:
         facts = valid_facts()

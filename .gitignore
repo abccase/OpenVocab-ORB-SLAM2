@@ -40,5 +40,7 @@ artifacts/
 build*/
 .venv/
 venv/
+__pycache__/
+*.py[cod]
 *.log
 *.partial

@@ -6,6 +6,11 @@ PROJECT(g2o)
 SET(g2o_C_FLAGS)
 SET(g2o_CXX_FLAGS)
 
+# g2o exposes Eigen-backed C++ classes across its shared-library boundary.
+# Compile it with the same language standard as ORB_SLAM2 so Eigen's ABI
+# (notably aligned allocation) cannot differ between producer and consumer.
+SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
+
 # default built type
 IF(NOT CMAKE_BUILD_TYPE)
   SET(CMAKE_BUILD_TYPE Release)

@@ -126,7 +126,13 @@ def _artifact(path: Path, *, pose_count: int | None = None) -> dict[str, object]
     return value
 
 
-def _completed_attempt(attempt: Path, compatibility_commit: str, expected_frames: int) -> RunResult | None:
+def _completed_attempt(
+    attempt: Path,
+    compatibility_commit: str,
+    producer_commit: str,
+    executable_sha256: str,
+    expected_frames: int,
+) -> RunResult | None:
     manifest_path = attempt / "run_manifest.json"
     if not manifest_path.is_file():
         return None
@@ -135,6 +141,10 @@ def _completed_attempt(attempt: Path, compatibility_commit: str, expected_frames
         if manifest.get("state") != "COMPLETED" or manifest.get("valid") is not True:
             return None
         if manifest.get("compatibility_commit") != compatibility_commit:
+            return None
+        if manifest.get("producer_commit") != producer_commit:
+            return None
+        if manifest.get("executable", {}).get("sha256") != executable_sha256:
             return None
         trajectory_path = attempt / "CameraTrajectory.txt"
         keyframe_path = attempt / "KeyFrameTrajectory.txt"
@@ -158,24 +168,32 @@ def run_baseline_condition(
     vocabulary: Path,
     output_root: Path,
     compatibility_commit: str,
+    producer_commit: str,
     registry: Path | None = None,
     study: str = "oracle",
 ) -> RunResult:
     sequence_root = Path(condition.sequence_root).resolve()
     association = sequence_root / "associate.txt"
     expected_frames = _association_count(association)
+    executable = Path(executable).resolve()
+    vocabulary = Path(vocabulary).resolve()
+    settings = Path(condition.settings).resolve()
+    executable_sha256 = _sha256_file(executable)
     condition_root = Path(output_root) / condition.sequence_id / f"seed-{condition.seed}"
     attempts = sorted(condition_root.glob("attempt-*")) if condition_root.is_dir() else []
     for attempt in attempts:
-        completed = _completed_attempt(attempt, compatibility_commit, expected_frames)
+        completed = _completed_attempt(
+            attempt,
+            compatibility_commit,
+            producer_commit,
+            executable_sha256,
+            expected_frames,
+        )
         if completed is not None:
             return completed
     attempt_number = len(attempts) + 1
     run_dir = condition_root / f"attempt-{attempt_number:03d}"
     run_dir.mkdir(parents=True, exist_ok=False)
-    executable = Path(executable).resolve()
-    vocabulary = Path(vocabulary).resolve()
-    settings = Path(condition.settings).resolve()
     telemetry = run_dir / "frame_telemetry.jsonl"
     command = [str(executable), str(vocabulary), str(settings), str(sequence_root), str(association)]
     if study not in {"smoke", "oracle"}:
@@ -190,6 +208,10 @@ def run_baseline_condition(
         "sequence_id": condition.sequence_id,
         "seed": condition.seed,
         "compatibility_commit": compatibility_commit,
+        "producer_commit": producer_commit,
+        "executable": {"path": str(executable), "sha256": executable_sha256},
+        "vocabulary": {"path": str(vocabulary), "sha256": _sha256_file(vocabulary)},
+        "settings": {"path": str(settings), "sha256": _sha256_file(settings)},
         "command": command,
         "cwd": str(run_dir.resolve()),
         "expected_frames": expected_frames,
@@ -281,6 +303,7 @@ def main() -> int:
     if any(seed is None for seed in seeds):
         parser.error("select --seed or use --all-seeds")
     compatibility_commit = _git_output(root, "rev-parse", "baseline/ubuntu22^{}")
+    producer_commit = _git_output(root, "rev-parse", "HEAD")
     output_root = args.output_root or Path("runs") / args.study
     failures = 0
     for item in selected:
@@ -300,6 +323,7 @@ def main() -> int:
                 vocabulary=args.vocabulary,
                 output_root=output_root,
                 compatibility_commit=compatibility_commit,
+                producer_commit=producer_commit,
                 registry=args.registry,
                 study=args.study,
             )

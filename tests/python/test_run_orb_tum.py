@@ -52,6 +52,7 @@ class OracleRunnerTests(unittest.TestCase):
                 vocabulary=vocabulary,
                 output_root=root / "runs",
                 compatibility_commit="baseline-commit",
+                producer_commit="producer-commit",
             )
 
             self.assertTrue(result.valid)
@@ -60,6 +61,7 @@ class OracleRunnerTests(unittest.TestCase):
             self.assertEqual(manifest["state"], "COMPLETED")
             self.assertEqual(manifest["seed"], 23011)
             self.assertEqual(manifest["compatibility_commit"], "baseline-commit")
+            self.assertEqual(manifest["producer_commit"], "producer-commit")
             self.assertEqual(manifest["trajectory"]["pose_count"], 1)
             self.assertEqual(len(manifest["trajectory"]["sha256"]), 64)
 
@@ -70,10 +72,12 @@ class OracleRunnerTests(unittest.TestCase):
             first = run_baseline_condition(
                 condition, executable=executable, vocabulary=vocabulary,
                 output_root=root / "runs", compatibility_commit="baseline-commit",
+                producer_commit="producer-commit",
             )
             second = run_baseline_condition(
                 condition, executable=executable, vocabulary=vocabulary,
                 output_root=root / "runs", compatibility_commit="baseline-commit",
+                producer_commit="producer-commit",
             )
 
             self.assertEqual(first.run_dir, second.run_dir)
@@ -87,6 +91,7 @@ class OracleRunnerTests(unittest.TestCase):
             result = run_baseline_condition(
                 condition, executable=executable, vocabulary=vocabulary,
                 output_root=root / "runs", compatibility_commit="baseline-commit",
+                producer_commit="producer-commit",
             )
 
             self.assertFalse(result.valid)
@@ -103,6 +108,7 @@ class OracleRunnerTests(unittest.TestCase):
             result = run_baseline_condition(
                 condition, executable=executable, vocabulary=vocabulary,
                 output_root=root / "runs", compatibility_commit="baseline-commit",
+                producer_commit="producer-commit",
                 study="smoke",
             )
 

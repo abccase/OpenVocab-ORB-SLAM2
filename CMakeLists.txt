@@ -113,6 +113,11 @@ if(BUILD_TESTING)
    add_executable(test_run_telemetry tests/cpp/test_run_telemetry.cc)
    target_link_libraries(test_run_telemetry GTest::gtest_main)
    add_test(NAME run_telemetry COMMAND test_run_telemetry)
+   add_executable(test_g2o_abi tests/cpp/test_g2o_abi.cc)
+   target_link_libraries(test_g2o_abi
+      ${PROJECT_SOURCE_DIR}/Thirdparty/g2o/lib/libg2o.so
+      GTest::gtest_main)
+   add_test(NAME g2o_abi COMMAND test_g2o_abi)
 endif()
 
 # Build examples

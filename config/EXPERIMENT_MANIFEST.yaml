@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "study_id": "ovorb2_tum_v1",
+  "upstream": {
+    "repository": "https://github.com/raulmur/ORB_SLAM2.git",
+    "commit": "f2e6f51cdc8d067655d90a78c06261378e07e8f3"
+  },
+  "semantic_models": {
+    "grounding_dino": {
+      "repository": "https://github.com/IDEA-Research/GroundingDINO.git",
+      "commit": "856dde20aee659246248e20734ef9ba5214f5e44",
+      "config": "GroundingDINO_SwinT_OGC.py",
+      "weights": "groundingdino_swint_ogc.pth"
+    },
+    "sam": {
+      "repository": "https://github.com/facebookresearch/segment-anything.git",
+      "commit": "dca509fe793f601edb92606367a655c15ac00fdf",
+      "model_type": "vit_b",
+      "weights": "sam_vit_b_01ec64.pth"
+    }
+  },
+  "datasets": [
+    {"id": "fr1_desk", "archive": "rgbd_dataset_freiburg1_desk.tgz", "settings": "TUM1.yaml", "role": "static_control"},
+    {"id": "fr1_room", "archive": "rgbd_dataset_freiburg1_room.tgz", "settings": "TUM1.yaml", "role": "static_control"},
+    {"id": "fr3_sitting_xyz", "archive": "rgbd_dataset_freiburg3_sitting_xyz.tgz", "settings": "TUM3.yaml", "role": "moderate_dynamic"},
+    {"id": "fr3_sitting_halfsphere", "archive": "rgbd_dataset_freiburg3_sitting_halfsphere.tgz", "settings": "TUM3.yaml", "role": "moderate_dynamic"},
+    {"id": "fr3_walking_xyz", "archive": "rgbd_dataset_freiburg3_walking_xyz.tgz", "settings": "TUM3.yaml", "role": "high_dynamic"},
+    {"id": "fr3_walking_halfsphere", "archive": "rgbd_dataset_freiburg3_walking_halfsphere.tgz", "settings": "TUM3.yaml", "role": "high_dynamic"}
+  ],
+  "modes": ["baseline", "semantic-feedback"],
+  "repetitions": 5,
+  "random_seeds": [23011, 23012, 23013, 23014, 23015],
+  "playback": "dataset_timestamp_paced",
+  "formal_semantic_source": "frozen_cache",
+  "online_demo_source": "ipc_latest_frame",
+  "online_request_rate_cap_hz": 5.0,
+  "online_max_mask_age_ms": 250,
+  "cache": {
+    "schema": "ovorb.semantic-cache.v1",
+    "image_long_side": 800,
+    "oom_fallback_long_side": 640,
+    "box_threshold": 0.35,
+    "text_threshold": 0.25,
+    "mask_threshold": 0.5,
+    "prompts_file": "config/PROMPTS.yaml",
+    "formal_cache_is_immutable": true
+  },
+  "dynamic_confirmation": {
+    "min_valid_depth_pixels": 100,
+    "min_confirming_observations": 3,
+    "base_motion_threshold_m": 0.10,
+    "robust_sigma_multiplier": 3.0,
+    "dynamic_enter_threshold": 0.70,
+    "dynamic_exit_threshold": 0.40,
+    "uncertain_retention_fraction": 0.50,
+    "max_track_misses": 5,
+    "association_weights": {"centroid_3d": 0.55, "mask_iou": 0.30, "label": 0.15},
+    "association_gate_m": 1.0
+  },
+  "metrics": {
+    "trajectory_alignment": "SE3",
+    "ate": "translation_rmse_m",
+    "rpe_delta": 1.0,
+    "rpe_delta_unit": "seconds",
+    "tracking": ["valid_pose_fraction", "lost_frame_fraction", "relocalization_count", "tracking_time_ms"],
+    "features": ["raw_keypoints", "used_keypoints", "removed_dynamic", "retained_uncertain"],
+    "semantic": ["cache_coverage", "inference_ms", "instances_per_frame", "label_stability"],
+    "online": ["actual_semantic_hz", "request_drop_fraction", "mask_age_ms", "degraded_frame_fraction"],
+    "map": ["integrated_frame_count", "static_surface_points", "object_count", "dynamic_leakage_proxy"]
+  },
+  "statistics": {
+    "unit": "paired_run_by_sequence_and_seed",
+    "primary_contrast": "semantic-feedback_minus_baseline_ATE_RMSE",
+    "confidence_interval": "paired_bootstrap_95_percent",
+    "report_all_sequences": true,
+    "positive_result_required": false
+  }
+}

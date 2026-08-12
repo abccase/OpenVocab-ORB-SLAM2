@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "ovorb.ipc.v1",
+  "title": "OpenVocab ORB-SLAM2 local IPC packet",
+  "oneOf": [
+    {
+      "title": "FrameRequest",
+      "type": "object",
+      "required": ["protocol_version", "kind", "run_id", "frame_id", "timestamp_ns", "prompts_sha256", "jpeg_bytes"],
+      "properties": {
+        "protocol_version": {"const": 1},
+        "kind": {"const": "frame_request"},
+        "run_id": {"type": "string", "minLength": 1},
+        "frame_id": {"type": "integer", "minimum": 0},
+        "timestamp_ns": {"type": "integer", "minimum": 0},
+        "prompts_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "jpeg_bytes": {"type": "string", "contentEncoding": "base64"}
+      },
+      "additionalProperties": false
+    },
+    {
+      "title": "SemanticPacket",
+      "type": "object",
+      "required": ["protocol_version", "kind", "run_id", "frame_id", "source_timestamp_ns", "produced_timestamp_ns", "model_manifest_sha256", "instances"],
+      "properties": {
+        "protocol_version": {"const": 1},
+        "kind": {"const": "semantic_packet"},
+        "run_id": {"type": "string", "minLength": 1},
+        "frame_id": {"type": "integer", "minimum": 0},
+        "source_timestamp_ns": {"type": "integer", "minimum": 0},
+        "produced_timestamp_ns": {"type": "integer", "minimum": 0},
+        "model_manifest_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "inference_ms": {"type": "number", "minimum": 0},
+        "instances": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["local_id", "label", "score", "box_xyxy", "mask_rle"],
+            "properties": {
+              "local_id": {"type": "integer", "minimum": 0},
+              "label": {"type": "string", "minLength": 1},
+              "score": {"type": "number", "minimum": 0, "maximum": 1},
+              "box_xyxy": {"type": "array", "items": {"type": "number"}, "minItems": 4, "maxItems": 4},
+              "mask_rle": {"type": "object"}
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  ]
+}

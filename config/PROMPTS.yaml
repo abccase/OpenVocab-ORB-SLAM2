@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "prompt_set_id": "tum_office_v1",
+  "frozen_formal_prompt": "person . chair . office chair . backpack . handbag . suitcase . bottle . cup . laptop . monitor . keyboard . book .",
+  "normalization": {
+    "lowercase": true,
+    "separator": " . ",
+    "terminal_period": true
+  },
+  "runtime_open_prompt_allowed": true,
+  "runtime_prompt_use": "online_demo_only",
+  "runtime_prompt_may_replace_formal_results": false
+}

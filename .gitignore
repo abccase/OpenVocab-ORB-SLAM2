@@ -22,3 +22,23 @@ build/
 *~
 lib/
 
+# Agent control-plane files are local-only.
+state/
+reports/
+runs/
+.agents/
+.codex/
+docs/agent/
+docs/superpowers/
+
+# External and generated reproducibility inputs/outputs are never committed.
+data/
+external/
+weights/
+cache/
+artifacts/
+build*/
+.venv/
+venv/
+*.log
+*.partial

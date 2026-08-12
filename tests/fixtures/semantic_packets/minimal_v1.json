@@ -1,0 +1,23 @@
+{
+  "frame_id": 0,
+  "image_height": 2,
+  "image_width": 2,
+  "inference_config_sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+  "inference_time_seconds": 0.0,
+  "instances": [
+    {
+      "box_xyxy": [0.0, 0.0, 1.0, 2.0],
+      "label": "person",
+      "local_id": 0,
+      "mask_rle": {"counts": [0, 2, 2], "size": [2, 2]},
+      "score": 0.875
+    }
+  ],
+  "model_manifest_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+  "prompt_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+  "schema": "ovorb.semantic-cache.v1",
+  "sequence_id": "fixture",
+  "source_image_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+  "study_id": "ovorb2_tum_v1",
+  "timestamp": 1.0
+}

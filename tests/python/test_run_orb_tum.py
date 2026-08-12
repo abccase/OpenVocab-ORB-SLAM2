@@ -95,6 +95,21 @@ class OracleRunnerTests(unittest.TestCase):
             self.assertEqual(manifest["exit_code"], 3)
             self.assertIn("process exited 3", manifest["invalid_reason"])
 
+    def test_smoke_run_records_separate_study_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            condition, executable, vocabulary = self.make_fixture(root)
+
+            result = run_baseline_condition(
+                condition, executable=executable, vocabulary=vocabulary,
+                output_root=root / "runs", compatibility_commit="baseline-commit",
+                study="smoke",
+            )
+
+            manifest = json.loads((result.run_dir / "run_manifest.json").read_text())
+            self.assertEqual(manifest["study"], "smoke")
+            self.assertTrue(manifest["run_id"].startswith("smoke-"))
+
     def test_trajectory_parser_rejects_nonfinite_or_nonmonotonic_rows(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "trajectory.txt"

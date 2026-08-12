@@ -159,6 +159,7 @@ def run_baseline_condition(
     output_root: Path,
     compatibility_commit: str,
     registry: Path | None = None,
+    study: str = "oracle",
 ) -> RunResult:
     sequence_root = Path(condition.sequence_root).resolve()
     association = sequence_root / "associate.txt"
@@ -177,12 +178,14 @@ def run_baseline_condition(
     settings = Path(condition.settings).resolve()
     telemetry = run_dir / "frame_telemetry.jsonl"
     command = [str(executable), str(vocabulary), str(settings), str(sequence_root), str(association)]
-    run_id = f"oracle-{condition.sequence_id}-seed-{condition.seed}-attempt-{attempt_number:03d}"
+    if study not in {"smoke", "oracle"}:
+        raise ValueError(f"unsupported baseline study: {study}")
+    run_id = f"{study}-{condition.sequence_id}-seed-{condition.seed}-attempt-{attempt_number:03d}"
     started_utc = _utc_now()
     base_manifest: dict[str, object] = {
         "schema_version": 1,
         "run_id": run_id,
-        "study": "oracle",
+        "study": study,
         "mode": "baseline",
         "sequence_id": condition.sequence_id,
         "seed": condition.seed,
@@ -298,6 +301,7 @@ def main() -> int:
                 output_root=output_root,
                 compatibility_commit=compatibility_commit,
                 registry=args.registry,
+                study=args.study,
             )
             print(f"{'VALID' if result.valid else 'INVALID'} {condition.sequence_id} seed={seed} dir={result.run_dir} reason={result.invalid_reason}")
             failures += int(not result.valid)

@@ -7,6 +7,11 @@
     "compatibility_patch_sha256": "4daedba2498f3952ea5d7a98f0a829bc0f2b0f26d905a04d2338d235236a0923",
     "config": "groundingdino/config/GroundingDINO_SwinT_OGC.py",
     "config_sha256": "172e80017f9395668a9cb5d1b8bd9d061c0e360471c6ed673c83b69bb14399f1",
+    "cuda_extension": {
+      "path": "groundingdino/_C.cpython-310-x86_64-linux-gnu.so",
+      "size": 11094464,
+      "sha256": "cee346dd650e3106ccf0e3a9fcc8d0207031596c98a52299581adcb054798e7d"
+    },
     "weights": "groundingdino_swint_ogc.pth",
     "weights_url": "https://github.com/IDEA-Research/GroundingDINO/releases/download/v0.1.0-alpha/groundingdino_swint_ogc.pth",
     "weights_size": 693997677,

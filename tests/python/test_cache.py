@@ -108,6 +108,37 @@ class CacheTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "ignored importable"):
                 _validate_source_repository(root, commit, expected_diff="")
 
+    def test_source_repository_binds_ignored_cuda_extension_by_hash(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+            subprocess.run(["git", "config", "user.name", "Test"], cwd=root, check=True)
+            subprocess.run(["git", "config", "user.email", "test@example.invalid"], cwd=root, check=True)
+            (root / ".gitignore").write_text("*.so\n", encoding="utf-8")
+            (root / "model.py").write_text("MODEL = 1\n", encoding="utf-8")
+            subprocess.run(["git", "add", "."], cwd=root, check=True)
+            subprocess.run(["git", "commit", "-qm", "initial"], cwd=root, check=True)
+            commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip()
+            extension = root / "groundingdino/_C.test.so"
+            extension.parent.mkdir()
+            extension.write_bytes(b"compiled-extension")
+            digest = hashlib.sha256(extension.read_bytes()).hexdigest()
+
+            _validate_source_repository(
+                root,
+                commit,
+                expected_diff="",
+                allowed_ignored_sha256={"groundingdino/_C.test.so": digest},
+            )
+            extension.write_bytes(b"altered-extension")
+            with self.assertRaisesRegex(ValueError, "ignored source hash mismatch"):
+                _validate_source_repository(
+                    root,
+                    commit,
+                    expected_diff="",
+                    allowed_ignored_sha256={"groundingdino/_C.test.so": digest},
+                )
+
     def test_job_builder_recomputes_source_tree_identity(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -201,6 +232,28 @@ class CacheTests(unittest.TestCase):
                     model_manifest_sha256="3" * 64,
                     producer_commit="8" * 40,
                 )
+            validation_jobs = build_sequence_jobs(
+                root,
+                experiment,
+                primary,
+                prompt_sha256="2" * 64,
+                model_manifest_sha256="3" * 64,
+                producer_commit="8" * 40,
+                enforce_producer_commit=False,
+            )
+            self.assertEqual(validation_jobs[0].manifest, existing)
+
+    def test_semantic_model_manifest_binds_compiled_cuda_extension(self) -> None:
+        root = Path(__file__).parents[2]
+        model_manifest = json.loads(
+            (root / "config/SEMANTIC_MODELS.json").read_text(encoding="utf-8")
+        )
+        identity = model_manifest["grounding_dino"]["cuda_extension"]
+        extension = root / "external/GroundingDINO" / identity["path"]
+
+        self.assertTrue(extension.is_file())
+        self.assertEqual(extension.stat().st_size, identity["size"])
+        self.assertEqual(hashlib.sha256(extension.read_bytes()).hexdigest(), identity["sha256"])
 
     def test_deterministic_runtime_initialization_is_callable(self) -> None:
         _set_deterministic_runtime()

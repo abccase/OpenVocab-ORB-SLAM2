@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 from dataclasses import dataclass, replace
 import hashlib
+import importlib.util
 import json
 from pathlib import Path
 import subprocess
@@ -41,6 +42,7 @@ def build_sequence_jobs(
     prompt_sha256,
     model_manifest_sha256,
     producer_commit,
+    enforce_producer_commit=True,
 ):
     root = Path(project_root)
     jobs: list[SequenceCacheJob] = []
@@ -59,11 +61,13 @@ def build_sequence_jobs(
         cache_root = root / "cache/semantic/v1" / sequence_id
         existing_manifest = cache_root / "cache_manifest.json"
         selected_cfg = cfg
+        selected_producer = producer_commit
         resolution_fallback = None
         if existing_manifest.is_file():
             observed = CacheManifest.from_primitive(json.loads(existing_manifest.read_text()))
-            if observed.producer_commit != producer_commit:
+            if enforce_producer_commit and observed.producer_commit != producer_commit:
                 raise ValueError(f"producer commit mismatch for {sequence_id}")
+            selected_producer = observed.producer_commit
             fallback_long_side = int(experiment["cache"]["oom_fallback_long_side"])
             expected_fallback = f"cuda_oom_{cfg.image_long_side}_to_{fallback_long_side}"
             if observed.resolution_fallback is None and observed.image_long_side == cfg.image_long_side:
@@ -90,7 +94,7 @@ def build_sequence_jobs(
                     prompt_sha256=prompt_sha256,
                     model_manifest_sha256=model_manifest_sha256,
                     inference_config_sha256=selected_cfg.sha256(),
-                    producer_commit=producer_commit,
+                    producer_commit=selected_producer,
                     image_long_side=selected_cfg.image_long_side,
                     expected_frame_count=int(sequence_manifest["counts"]["associations"]),
                     resolution_fallback=resolution_fallback,
@@ -253,6 +257,7 @@ def _validate_source_repository(
     *,
     expected_diff: str,
     allowed_untracked: dict[str, str] | None = None,
+    allowed_ignored_sha256: dict[str, str] | None = None,
 ) -> None:
     source = Path(source)
     if _git_output("rev-parse", "HEAD", cwd=source) != expected_commit:
@@ -263,6 +268,7 @@ def _validate_source_repository(
     if observed_diff != expected_diff:
         raise ValueError(f"tracked source diff mismatch: {source.name}")
     allowed = allowed_untracked or {}
+    allowed_ignored = allowed_ignored_sha256 or {}
     untracked = subprocess.check_output(
         ["git", "ls-files", "--others", "--exclude-standard"], cwd=source, text=True
     ).splitlines()
@@ -277,18 +283,28 @@ def _validate_source_repository(
         text=True,
     ).splitlines()
     for relative in ignored:
+        if relative in allowed_ignored:
+            if _sha256_file(source / relative) != allowed_ignored[relative]:
+                raise ValueError(f"ignored source hash mismatch: {source.name}/{relative}")
+            continue
         path = Path(relative)
         is_bytecode = "__pycache__" in path.parts and path.suffix == ".pyc"
         is_build_output = path.parts[:1] == ("build",)
-        is_cuda_extension = (
-            path.parent == Path("groundingdino")
-            and path.name.startswith("_C.")
-            and path.suffix == ".so"
-        )
-        if path.suffix in {".py", ".so"} and not (
-            is_bytecode or is_build_output or is_cuda_extension
-        ):
+        if path.suffix in {".py", ".so"} and not (is_bytecode or is_build_output):
             raise ValueError(f"ignored importable source file: {source.name}/{relative}")
+
+
+def _validate_cuda_extension(source: Path, identity: dict) -> None:
+    extension = source / identity["path"]
+    if extension.stat().st_size != int(identity["size"]):
+        raise ValueError("GroundingDINO CUDA extension size mismatch")
+    if _sha256_file(extension) != identity["sha256"]:
+        raise ValueError("GroundingDINO CUDA extension hash mismatch")
+    spec = importlib.util.find_spec("groundingdino._C")
+    if spec is None or spec.origin is None:
+        raise ValueError("GroundingDINO CUDA extension is not importable")
+    if Path(spec.origin).resolve() != extension.resolve():
+        raise ValueError("GroundingDINO CUDA extension import path mismatch")
 
 
 def _validate_model_assets(root: Path, assets: dict) -> None:
@@ -297,6 +313,7 @@ def _validate_model_assets(root: Path, assets: dict) -> None:
         "sam": root / "external/segment-anything",
     }
     patch_path = root / assets["grounding_dino"]["compatibility_patch"]
+    extension_identity = assets["grounding_dino"]["cuda_extension"]
     if _sha256_file(patch_path) != assets["grounding_dino"]["compatibility_patch_sha256"]:
         raise ValueError("GroundingDINO compatibility patch hash mismatch")
     _validate_source_repository(
@@ -304,7 +321,11 @@ def _validate_model_assets(root: Path, assets: dict) -> None:
         assets["grounding_dino"]["commit"],
         expected_diff=patch_path.read_text(encoding="utf-8"),
         allowed_untracked={"groundingdino/version.py": "__version__ = '0.1.0'\n"},
+        allowed_ignored_sha256={
+            extension_identity["path"]: extension_identity["sha256"]
+        },
     )
+    _validate_cuda_extension(paths["grounding_dino"], extension_identity)
     _validate_source_repository(
         paths["sam"], assets["sam"]["commit"], expected_diff=""
     )
@@ -441,6 +462,7 @@ def main(argv=None) -> int:
         prompt_sha256=prompt_sha,
         model_manifest_sha256=model_sha,
         producer_commit=producer,
+        enforce_producer_commit=not args.validate_only,
     )
     if args.validate_only:
         failed = False

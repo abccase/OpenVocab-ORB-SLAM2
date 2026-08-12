@@ -110,6 +110,9 @@ if(BUILD_TESTING)
    add_executable(test_rgbd_api tests/cpp/test_rgbd_api.cc)
    target_link_libraries(test_rgbd_api ${PROJECT_NAME} GTest::gtest_main)
    add_test(NAME rgbd_api COMMAND test_rgbd_api)
+   add_executable(test_run_telemetry tests/cpp/test_run_telemetry.cc)
+   target_link_libraries(test_run_telemetry GTest::gtest_main)
+   add_test(NAME run_telemetry COMMAND test_run_telemetry)
 endif()
 
 # Build examples

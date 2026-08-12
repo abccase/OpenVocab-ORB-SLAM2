@@ -23,11 +23,13 @@
 #include<algorithm>
 #include<fstream>
 #include<chrono>
+#include<cstdlib>
 #include<unistd.h>
 
 #include<opencv2/core/core.hpp>
 
 #include<System.h>
+#include<RunTelemetry.h>
 
 using namespace std;
 
@@ -65,6 +67,19 @@ int main(int argc, char **argv)
     // Create SLAM system. It initializes all system threads and gets ready to process frames.
     ORB_SLAM2::System SLAM(argv[1],argv[2],ORB_SLAM2::System::RGBD,true);
 
+    ofstream telemetry;
+    const char* telemetryPath = std::getenv("ORB_SLAM2_FRAME_TELEMETRY");
+    if(telemetryPath)
+    {
+        telemetry.open(telemetryPath, ios::out | ios::trunc);
+        if(!telemetry.is_open())
+        {
+            cerr << "Failed to open frame telemetry: " << telemetryPath << endl;
+            SLAM.Shutdown();
+            return 1;
+        }
+    }
+
     // Vector for tracking time statistics
     vector<float> vTimesTrack;
     vTimesTrack.resize(nImages);
@@ -96,7 +111,7 @@ int main(int argc, char **argv)
 #endif
 
         // Pass the image to the SLAM system
-        SLAM.TrackRGBD(imRGB,imD,tframe);
+        cv::Mat Tcw = SLAM.TrackRGBD(imRGB,imD,tframe);
 
 #ifdef COMPILEDWITHC11
         std::chrono::steady_clock::time_point t2 = std::chrono::steady_clock::now();
@@ -105,6 +120,13 @@ int main(int argc, char **argv)
 #endif
 
         double ttrack= std::chrono::duration_cast<std::chrono::duration<double> >(t2 - t1).count();
+
+        if(telemetry.is_open())
+        {
+            telemetry << ORB_SLAM2::FormatFrameTelemetry(
+                static_cast<size_t>(ni), tframe, SLAM.GetTrackingState(),
+                !Tcw.empty(), ttrack) << endl;
+        }
 
         vTimesTrack[ni]=ttrack;
 

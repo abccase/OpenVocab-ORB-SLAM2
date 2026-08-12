@@ -24,7 +24,9 @@
 #include"Map.h"
 #include"MapPoint.h"
 #include"KeyFrame.h"
+#if ORB_SLAM2_BUILD_VIEWER
 #include<pangolin/pangolin.h>
+#endif
 
 #include<mutex>
 
@@ -38,12 +40,16 @@ public:
 
     Map* mpMap;
 
+#if ORB_SLAM2_BUILD_VIEWER
     void DrawMapPoints();
     void DrawKeyFrames(const bool bDrawKF, const bool bDrawGraph);
     void DrawCurrentCamera(pangolin::OpenGlMatrix &Twc);
+#endif
     void SetCurrentCameraPose(const cv::Mat &Tcw);
     void SetReferenceKeyFrame(KeyFrame *pKF);
+#if ORB_SLAM2_BUILD_VIEWER
     void GetCurrentOpenGLCameraMatrix(pangolin::OpenGlMatrix &M);
+#endif
 
 private:
 

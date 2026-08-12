@@ -23,7 +23,10 @@
 #include "System.h"
 #include "Converter.h"
 #include <thread>
+#include <unistd.h>
+#if ORB_SLAM2_BUILD_VIEWER
 #include <pangolin/pangolin.h>
+#endif
 #include <iomanip>
 
 namespace ORB_SLAM2
@@ -315,8 +318,10 @@ void System::Shutdown()
         usleep(5000);
     }
 
+#if ORB_SLAM2_BUILD_VIEWER
     if(mpViewer)
         pangolin::BindToContext("ORB-SLAM2: Map Viewer");
+#endif
 }
 
 void System::SaveTrajectoryTUM(const string &filename)

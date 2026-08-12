@@ -19,6 +19,7 @@
 */
 
 #include "Viewer.h"
+#include <unistd.h>
 #include <pangolin/pangolin.h>
 
 #include <mutex>

@@ -19,6 +19,7 @@
 */
 
 #include "LocalMapping.h"
+#include <unistd.h>
 #include "LoopClosing.h"
 #include "ORBmatcher.h"
 #include "Optimizer.h"

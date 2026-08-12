@@ -23,7 +23,8 @@
 
 #include <vector>
 #include <list>
-#include <opencv/cv.h>
+#include <opencv2/core.hpp>
+#include <opencv2/features2d.hpp>
 
 
 namespace ORB_SLAM2
@@ -113,4 +114,3 @@ protected:
 } //namespace ORB_SLAM
 
 #endif
-

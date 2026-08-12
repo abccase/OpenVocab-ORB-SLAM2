@@ -41,7 +41,6 @@ def build_sequence_jobs(
     prompt_sha256,
     model_manifest_sha256,
     producer_commit,
-    resolution_fallback=None,
 ):
     root = Path(project_root)
     jobs: list[SequenceCacheJob] = []
@@ -55,27 +54,44 @@ def build_sequence_jobs(
         association_path = dataset_root / "associate.txt"
         if _sha256_file(association_path) != sequence_manifest["association_sha256"]:
             raise ValueError(f"association hash mismatch for {sequence_id}")
+        if _hash_extracted_tree(dataset_root) != sequence_manifest["extracted_tree_sha256"]:
+            raise ValueError(f"source tree hash mismatch for {sequence_id}")
         cache_root = root / "cache/semantic/v1" / sequence_id
         existing_manifest = cache_root / "cache_manifest.json"
-        selected_producer = producer_commit
+        selected_cfg = cfg
+        resolution_fallback = None
         if existing_manifest.is_file():
-            selected_producer = str(json.loads(existing_manifest.read_text())["producer_commit"])
+            observed = CacheManifest.from_primitive(json.loads(existing_manifest.read_text()))
+            if observed.producer_commit != producer_commit:
+                raise ValueError(f"producer commit mismatch for {sequence_id}")
+            fallback_long_side = int(experiment["cache"]["oom_fallback_long_side"])
+            expected_fallback = f"cuda_oom_{cfg.image_long_side}_to_{fallback_long_side}"
+            if observed.resolution_fallback is None and observed.image_long_side == cfg.image_long_side:
+                pass
+            elif (
+                observed.resolution_fallback == expected_fallback
+                and observed.image_long_side == fallback_long_side
+            ):
+                selected_cfg = replace(cfg, image_long_side=fallback_long_side)
+                resolution_fallback = expected_fallback
+            else:
+                raise ValueError(f"invalid resolution fallback identity for {sequence_id}")
         jobs.append(
             SequenceCacheJob(
                 dataset_root=dataset_root,
                 association_path=association_path,
                 cache_root=cache_root,
                 manifest=CacheManifest(
-                    schema=cfg.schema,
+                    schema=selected_cfg.schema,
                     study_id=str(experiment["study_id"]),
                     sequence_id=sequence_id,
                     source_tree_sha256=str(sequence_manifest["extracted_tree_sha256"]),
                     association_sha256=str(sequence_manifest["association_sha256"]),
                     prompt_sha256=prompt_sha256,
                     model_manifest_sha256=model_manifest_sha256,
-                    inference_config_sha256=cfg.sha256(),
-                    producer_commit=selected_producer,
-                    image_long_side=cfg.image_long_side,
+                    inference_config_sha256=selected_cfg.sha256(),
+                    producer_commit=producer_commit,
+                    image_long_side=selected_cfg.image_long_side,
                     expected_frame_count=int(sequence_manifest["counts"]["associations"]),
                     resolution_fallback=resolution_fallback,
                 ),
@@ -138,6 +154,8 @@ def run_job_with_oom_fallback(
 
         oom_type = torch.cuda.OutOfMemoryError
     models.detector.image_long_side = cfg.image_long_side
+    if job.manifest.resolution_fallback is not None or cfg.image_long_side == fallback_long_side:
+        return generate(job, prompt, models, cfg, infer=infer)
     try:
         return generate(job, prompt, models, cfg, infer=infer)
     except oom_type:
@@ -199,6 +217,18 @@ def _sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _hash_extracted_tree(root: Path) -> str:
+    digest = hashlib.sha256()
+    for path in sorted(Path(root).rglob("*"), key=lambda item: item.relative_to(root).as_posix()):
+        if not path.is_file() or path.is_symlink() or path.name == "associate.txt":
+            continue
+        relative = path.relative_to(root).as_posix()
+        digest.update(relative.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(bytes.fromhex(_sha256_file(path)))
+    return digest.hexdigest()
+
+
 def _load_json(path: Path):
     return json.loads(Path(path).read_text(encoding="utf-8"))
 
@@ -207,26 +237,77 @@ def _git_output(*args, cwd: Path) -> str:
     return subprocess.check_output(["git", *args], cwd=cwd, text=True).strip()
 
 
+def _require_clean_product_tree(root: Path) -> None:
+    status = subprocess.check_output(
+        ["git", "status", "--porcelain=v1", "--untracked-files=all"],
+        cwd=root,
+        text=True,
+    )
+    if status:
+        raise ValueError("product tree must be clean before cache generation")
+
+
+def _validate_source_repository(
+    source: Path,
+    expected_commit: str,
+    *,
+    expected_diff: str,
+    allowed_untracked: dict[str, str] | None = None,
+) -> None:
+    source = Path(source)
+    if _git_output("rev-parse", "HEAD", cwd=source) != expected_commit:
+        raise ValueError(f"source commit mismatch: {source.name}")
+    observed_diff = subprocess.check_output(
+        ["git", "diff", "HEAD", "--binary", "--", "."], cwd=source, text=True
+    )
+    if observed_diff != expected_diff:
+        raise ValueError(f"tracked source diff mismatch: {source.name}")
+    allowed = allowed_untracked or {}
+    untracked = subprocess.check_output(
+        ["git", "ls-files", "--others", "--exclude-standard"], cwd=source, text=True
+    ).splitlines()
+    for relative in untracked:
+        if relative not in allowed:
+            raise ValueError(f"untracked source file: {source.name}/{relative}")
+        if (source / relative).read_text(encoding="utf-8") != allowed[relative]:
+            raise ValueError(f"untracked source content mismatch: {source.name}/{relative}")
+    ignored = subprocess.check_output(
+        ["git", "ls-files", "--others", "--ignored", "--exclude-standard"],
+        cwd=source,
+        text=True,
+    ).splitlines()
+    for relative in ignored:
+        path = Path(relative)
+        is_bytecode = "__pycache__" in path.parts and path.suffix == ".pyc"
+        is_build_output = path.parts[:1] == ("build",)
+        is_cuda_extension = (
+            path.parent == Path("groundingdino")
+            and path.name.startswith("_C.")
+            and path.suffix == ".so"
+        )
+        if path.suffix in {".py", ".so"} and not (
+            is_bytecode or is_build_output or is_cuda_extension
+        ):
+            raise ValueError(f"ignored importable source file: {source.name}/{relative}")
+
+
 def _validate_model_assets(root: Path, assets: dict) -> None:
     paths = {
         "grounding_dino": root / "external/GroundingDINO",
         "sam": root / "external/segment-anything",
     }
-    for name, source in paths.items():
-        observed = _git_output("rev-parse", "HEAD", cwd=source)
-        if observed != assets[name]["commit"]:
-            raise ValueError(f"{name} source commit mismatch")
     patch_path = root / assets["grounding_dino"]["compatibility_patch"]
     if _sha256_file(patch_path) != assets["grounding_dino"]["compatibility_patch_sha256"]:
         raise ValueError("GroundingDINO compatibility patch hash mismatch")
-    patched_source = "groundingdino/models/GroundingDINO/csrc/MsDeformAttn/ms_deform_attn_cuda.cu"
-    observed_patch = subprocess.check_output(
-        ["git", "diff", "--", patched_source], cwd=paths["grounding_dino"], text=True
+    _validate_source_repository(
+        paths["grounding_dino"],
+        assets["grounding_dino"]["commit"],
+        expected_diff=patch_path.read_text(encoding="utf-8"),
+        allowed_untracked={"groundingdino/version.py": "__version__ = '0.1.0'\n"},
     )
-    if observed_patch != patch_path.read_text(encoding="utf-8"):
-        raise ValueError("GroundingDINO compatibility patch is not applied exactly")
-    if subprocess.run(["git", "diff", "--quiet"], cwd=paths["sam"]).returncode:
-        raise ValueError("SAM tracked source is modified")
+    _validate_source_repository(
+        paths["sam"], assets["sam"]["commit"], expected_diff=""
+    )
     dino_config = paths["grounding_dino"] / assets["grounding_dino"]["config"]
     if _sha256_file(dino_config) != assets["grounding_dino"]["config_sha256"]:
         raise ValueError("GroundingDINO config hash mismatch")
@@ -348,6 +429,8 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
 
     root = Path(__file__).resolve().parents[1]
+    if not args.validate_only:
+        _require_clean_product_tree(root)
     manifest_path = args.manifest if args.manifest.is_absolute() else root / args.manifest
     experiment, assets, prompt, prompt_sha, model_sha, cfg = _load_frozen_inputs(root, manifest_path)
     producer = _git_output("rev-parse", "HEAD", cwd=root)
@@ -380,11 +463,12 @@ def main(argv=None) -> int:
     if not args.resume and any(job.cache_root.exists() for job in jobs):
         raise ValueError("semantic cache already exists; pass --resume to validate and continue")
     for job in jobs:
+        job_cfg = replace(cfg, image_long_side=job.manifest.image_long_side)
         run_job_with_oom_fallback(
             job,
             prompt,
             models,
-            cfg,
+            job_cfg,
             infer=infer_instances,
             fallback_long_side=int(experiment["cache"]["oom_fallback_long_side"]),
         )

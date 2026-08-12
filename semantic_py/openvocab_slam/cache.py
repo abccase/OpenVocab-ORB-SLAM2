@@ -236,10 +236,19 @@ def _write_json_atomic(path: Path, value: dict[str, object]) -> None:
 
 def _append_jsonl(path: Path, value: dict[str, object]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8", newline="\n") as stream:
-        stream.write(json.dumps(value, sort_keys=True, separators=(",", ":")) + "\n")
-        stream.flush()
-        os.fsync(stream.fileno())
+    previous = path.read_bytes() if path.exists() else b""
+    row = (json.dumps(value, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
+    temporary = path.parent / f".{path.name}.partial"
+    try:
+        with temporary.open("wb") as stream:
+            stream.write(previous)
+            stream.write(row)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
 
 
 def _read_index(path: Path) -> list[dict[str, Any]]:

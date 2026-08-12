@@ -7,6 +7,7 @@ from pathlib import Path
 import numpy as np
 
 from semantic_py.openvocab_slam.schemas import (
+    CacheManifest,
     InstanceObservation,
     SemanticFramePacket,
     decode_binary_mask_rle,
@@ -15,6 +16,26 @@ from semantic_py.openvocab_slam.schemas import (
 
 
 class SemanticSchemaTests(unittest.TestCase):
+    def test_cache_manifest_requires_exact_versioned_fields(self) -> None:
+        value = {
+            "schema": "ovorb.semantic-cache.v1",
+            "study_id": "study",
+            "sequence_id": "sequence",
+            "source_tree_sha256": "1" * 64,
+            "association_sha256": "2" * 64,
+            "prompt_sha256": "3" * 64,
+            "model_manifest_sha256": "4" * 64,
+            "inference_config_sha256": "5" * 64,
+            "producer_commit": "6" * 40,
+            "image_long_side": 800,
+            "expected_frame_count": 1,
+            "resolution_fallback": None,
+        }
+        self.assertEqual(CacheManifest.from_primitive(value).to_primitive(), value)
+        with self.assertRaises(ValueError):
+            CacheManifest.from_primitive({key: item for key, item in value.items() if key != "resolution_fallback"})
+        with self.assertRaises(ValueError):
+            CacheManifest.from_primitive({**value, "future_field": True})
     def test_versioned_packet_fixture_is_schema_valid(self) -> None:
         fixture = Path(__file__).parents[1] / "fixtures/semantic_packets/minimal_v1.json"
         packet = SemanticFramePacket.from_primitive(json.loads(fixture.read_text()))

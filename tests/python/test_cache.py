@@ -23,6 +23,9 @@ from tools.generate_cache import (
     generate_sequence_cache,
     run_job_with_oom_fallback,
     _set_deterministic_runtime,
+    _hash_extracted_tree,
+    _require_clean_product_tree,
+    _validate_source_repository,
 )
 
 
@@ -62,6 +65,143 @@ def manifest(frame_count: int = 2) -> CacheManifest:
 
 
 class CacheTests(unittest.TestCase):
+    def test_product_generation_requires_clean_committed_tree(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+            subprocess.run(["git", "config", "user.name", "Test"], cwd=root, check=True)
+            subprocess.run(["git", "config", "user.email", "test@example.invalid"], cwd=root, check=True)
+            tracked = root / "tracked.txt"
+            tracked.write_text("clean\n")
+            subprocess.run(["git", "add", "tracked.txt"], cwd=root, check=True)
+            subprocess.run(["git", "commit", "-qm", "initial"], cwd=root, check=True)
+            _require_clean_product_tree(root)
+
+            tracked.write_text("dirty\n")
+            with self.assertRaisesRegex(ValueError, "product tree must be clean"):
+                _require_clean_product_tree(root)
+
+    def test_source_repository_validation_rejects_any_code_injection(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+            subprocess.run(["git", "config", "user.name", "Test"], cwd=root, check=True)
+            subprocess.run(["git", "config", "user.email", "test@example.invalid"], cwd=root, check=True)
+            (root / ".gitignore").write_text("ignored/\n")
+            source = root / "model.py"
+            source.write_text("MODEL = 1\n")
+            subprocess.run(["git", "add", "."], cwd=root, check=True)
+            subprocess.run(["git", "commit", "-qm", "initial"], cwd=root, check=True)
+            commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip()
+            _validate_source_repository(root, commit, expected_diff="")
+
+            source.write_text("MODEL = 2\n")
+            with self.assertRaisesRegex(ValueError, "tracked source diff"):
+                _validate_source_repository(root, commit, expected_diff="")
+            subprocess.run(["git", "restore", "model.py"], cwd=root, check=True)
+            (root / "injection.py").write_text("MODEL = 3\n")
+            with self.assertRaisesRegex(ValueError, "untracked source"):
+                _validate_source_repository(root, commit, expected_diff="")
+            (root / "injection.py").unlink()
+            (root / "ignored").mkdir()
+            (root / "ignored/injection.py").write_text("MODEL = 4\n")
+            with self.assertRaisesRegex(ValueError, "ignored importable"):
+                _validate_source_repository(root, commit, expected_diff="")
+
+    def test_job_builder_recomputes_source_tree_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            manifest_root = root / "data/tum/manifests"
+            raw_root = root / "data/tum/raw/rgbd_dataset_freiburg1_desk"
+            manifest_root.mkdir(parents=True)
+            raw_root.mkdir(parents=True)
+            association = raw_root / "associate.txt"
+            association.write_text("1.0 rgb/1.png 1.0 depth/1.png\n", encoding="utf-8")
+            (raw_root / "rgb.txt").write_text("original", encoding="utf-8")
+            sequence_manifest = {
+                "archive": "rgbd_dataset_freiburg1_desk.tgz",
+                "association_sha256": hashlib.sha256(association.read_bytes()).hexdigest(),
+                "extracted_tree_sha256": _hash_extracted_tree(raw_root),
+                "counts": {"associations": 1},
+            }
+            (manifest_root / "fr1_desk.json").write_text(json.dumps(sequence_manifest))
+            (raw_root / "rgb.txt").write_text("changed", encoding="utf-8")
+            experiment = {
+                "study_id": "study",
+                "datasets": [{"id": "fr1_desk", "archive": sequence_manifest["archive"]}],
+            }
+            cfg = InferenceConfig("ovorb.semantic-cache.v1", 800, 0.35, 0.25, 0.5)
+
+            with self.assertRaisesRegex(ValueError, "source tree hash mismatch"):
+                build_sequence_jobs(
+                    root,
+                    experiment,
+                    cfg,
+                    prompt_sha256="2" * 64,
+                    model_manifest_sha256="3" * 64,
+                    producer_commit="7" * 40,
+                )
+
+    def test_existing_cache_must_match_current_producer_and_recovers_fallback(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            manifest_root = root / "data/tum/manifests"
+            raw_root = root / "data/tum/raw/rgbd_dataset_freiburg1_desk"
+            cache_root = root / "cache/semantic/v1/fr1_desk"
+            manifest_root.mkdir(parents=True)
+            raw_root.mkdir(parents=True)
+            cache_root.mkdir(parents=True)
+            association = raw_root / "associate.txt"
+            association.write_text("1.0 rgb/1.png 1.0 depth/1.png\n", encoding="utf-8")
+            sequence_manifest = {
+                "archive": "rgbd_dataset_freiburg1_desk.tgz",
+                "association_sha256": hashlib.sha256(association.read_bytes()).hexdigest(),
+                "extracted_tree_sha256": _hash_extracted_tree(raw_root),
+                "counts": {"associations": 1},
+            }
+            (manifest_root / "fr1_desk.json").write_text(json.dumps(sequence_manifest))
+            primary = InferenceConfig("ovorb.semantic-cache.v1", 800, 0.35, 0.25, 0.5)
+            fallback = InferenceConfig("ovorb.semantic-cache.v1", 640, 0.35, 0.25, 0.5)
+            existing = CacheManifest(
+                schema=primary.schema,
+                study_id="study",
+                sequence_id="fr1_desk",
+                source_tree_sha256=sequence_manifest["extracted_tree_sha256"],
+                association_sha256=sequence_manifest["association_sha256"],
+                prompt_sha256="2" * 64,
+                model_manifest_sha256="3" * 64,
+                inference_config_sha256=fallback.sha256(),
+                producer_commit="7" * 40,
+                image_long_side=640,
+                expected_frame_count=1,
+                resolution_fallback="cuda_oom_800_to_640",
+            )
+            (cache_root / "cache_manifest.json").write_text(json.dumps(existing.to_primitive()))
+            experiment = {
+                "study_id": "study",
+                "datasets": [{"id": "fr1_desk", "archive": sequence_manifest["archive"]}],
+                "cache": {"oom_fallback_long_side": 640},
+            }
+
+            jobs = build_sequence_jobs(
+                root,
+                experiment,
+                primary,
+                prompt_sha256="2" * 64,
+                model_manifest_sha256="3" * 64,
+                producer_commit="7" * 40,
+            )
+            self.assertEqual(jobs[0].manifest, existing)
+            with self.assertRaisesRegex(ValueError, "producer commit mismatch"):
+                build_sequence_jobs(
+                    root,
+                    experiment,
+                    primary,
+                    prompt_sha256="2" * 64,
+                    model_manifest_sha256="3" * 64,
+                    producer_commit="8" * 40,
+                )
+
     def test_deterministic_runtime_initialization_is_callable(self) -> None:
         _set_deterministic_runtime()
 
@@ -108,6 +248,46 @@ class CacheTests(unittest.TestCase):
             self.assertEqual(len(failed), 1)
             self.assertTrue((failed[0] / "partial").is_file())
 
+    def test_existing_fallback_cache_never_retries_a_second_time(self) -> None:
+        class SimulatedOom(RuntimeError):
+            pass
+
+        class Detector:
+            image_long_side = 640
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            fallback_manifest = CacheManifest.from_primitive(
+                {
+                    **manifest().to_primitive(),
+                    "image_long_side": 640,
+                    "resolution_fallback": "cuda_oom_800_to_640",
+                    "inference_config_sha256": InferenceConfig(
+                        "ovorb.semantic-cache.v1", 640, 0.35, 0.25, 0.5
+                    ).sha256(),
+                }
+            )
+            job = SequenceCacheJob(root, root / "associate.txt", root / "cache", fallback_manifest)
+            cfg = InferenceConfig("ovorb.semantic-cache.v1", 640, 0.35, 0.25, 0.5)
+            calls = []
+
+            def always_oom(*args, **kwargs):
+                calls.append(1)
+                raise SimulatedOom("simulated")
+
+            with self.assertRaises(SimulatedOom):
+                run_job_with_oom_fallback(
+                    job,
+                    "person .",
+                    ModelBundle(Detector(), object()),
+                    cfg,
+                    infer=lambda *args: [],
+                    fallback_long_side=640,
+                    generate=always_oom,
+                    oom_type=SimulatedOom,
+                )
+            self.assertEqual(calls, [1])
+
     def test_generate_cache_cli_starts_outside_repository_cwd(self) -> None:
         script = Path(__file__).parents[2] / "tools/generate_cache.py"
         completed = subprocess.run(
@@ -138,7 +318,7 @@ class CacheTests(unittest.TestCase):
                     {
                         "archive": "rgbd_dataset_freiburg1_desk.tgz",
                         "association_sha256": association_sha,
-                        "extracted_tree_sha256": "5" * 64,
+                        "extracted_tree_sha256": _hash_extracted_tree(raw_root),
                         "counts": {"associations": 1},
                     }
                 ),
@@ -196,6 +376,24 @@ class CacheTests(unittest.TestCase):
 
             self.assertEqual(read_cache_frame(path), first)
             self.assertFalse(any(path.parent.glob(".*.partial")))
+
+    def test_atomic_index_publication_preserves_previous_index_on_interruption(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            writer = CacheWriter(root, manifest())
+            writer.add(packet(0, 1.0, "1" * 64))
+            original_index = (root / "cache_index.jsonl").read_bytes()
+            second = packet(1, 2.0, "8" * 64)
+            write_cache_frame(root / "frames/000001.msgpack.zst", second)
+
+            with patch("os.replace", side_effect=OSError("simulated index interruption")):
+                with self.assertRaises(OSError):
+                    writer.add(second)
+
+            self.assertEqual((root / "cache_index.jsonl").read_bytes(), original_index)
+            resumed = CacheWriter(root, manifest())
+            resumed.add(second)
+            self.assertEqual(len((root / "cache_index.jsonl").read_text().splitlines()), 2)
 
     def test_writer_recovers_orphan_packet_and_resume_skips_only_exact_identity(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

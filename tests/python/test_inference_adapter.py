@@ -10,6 +10,7 @@ from semantic_py.openvocab_slam.inference import (
     ModelBundle,
     SamSegmenter,
     infer_instances,
+    _preprocess_grounding_dino_image,
 )
 from semantic_py.openvocab_slam.schemas import decode_binary_mask_rle
 
@@ -44,6 +45,13 @@ class FakeSegmenter:
 
 
 class InferenceAdapterTests(unittest.TestCase):
+    def test_grounding_dino_preprocess_treats_configured_size_as_long_side(self) -> None:
+        image = np.zeros((480, 640, 3), dtype=np.uint8)
+
+        transformed = _preprocess_grounding_dino_image(image, 800)
+
+        self.assertEqual(tuple(transformed.shape), (3, 600, 800))
+
     def test_grounding_dino_adapter_preserves_normalized_boxes_and_scores(self) -> None:
         calls = []
 

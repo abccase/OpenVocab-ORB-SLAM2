@@ -213,6 +213,14 @@ class CacheManifest:
 
     @classmethod
     def from_primitive(cls, value: dict[str, Any]) -> "CacheManifest":
+        required = {
+            "schema", "study_id", "sequence_id", "source_tree_sha256",
+            "association_sha256", "prompt_sha256", "model_manifest_sha256",
+            "inference_config_sha256", "producer_commit", "image_long_side",
+            "expected_frame_count", "resolution_fallback",
+        }
+        if set(value) != required:
+            raise ValueError("cache manifest fields do not match schema")
         return cls(
             schema=str(value["schema"]),
             study_id=str(value["study_id"]),
@@ -225,7 +233,7 @@ class CacheManifest:
             producer_commit=str(value["producer_commit"]),
             image_long_side=int(value["image_long_side"]),
             expected_frame_count=int(value["expected_frame_count"]),
-            resolution_fallback=value.get("resolution_fallback"),
+            resolution_fallback=value["resolution_fallback"],
         )
 
 

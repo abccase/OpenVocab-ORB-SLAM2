@@ -177,15 +177,19 @@ def _preprocess_grounding_dino_image(image_bgr, image_long_side):
     from PIL import Image
     import groundingdino.datasets.transforms as transforms
 
-    maximum = max(image_long_side, round(image_long_side * 1333 / 800))
+    image_array = np.asarray(image_bgr)
+    height, width = image_array.shape[:2]
+    scale = image_long_side / max(height, width)
+    target_width = max(1, round(width * scale))
+    target_height = max(1, round(height * scale))
     transform = transforms.Compose(
         [
-            transforms.RandomResize([image_long_side], max_size=maximum),
+            transforms.RandomResize([(target_width, target_height)]),
             transforms.ToTensor(),
             transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
         ]
     )
-    image_rgb = cv2.cvtColor(np.asarray(image_bgr), cv2.COLOR_BGR2RGB)
+    image_rgb = cv2.cvtColor(image_array, cv2.COLOR_BGR2RGB)
     transformed, _ = transform(Image.fromarray(image_rgb), None)
     return transformed
 

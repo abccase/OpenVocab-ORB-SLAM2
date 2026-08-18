@@ -127,11 +127,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.validate_only:
         failed = False
         for job in jobs:
-            result = validate_dynamic_cache(
-                job.cache_root,
-                job.manifest,
-                job.dataset_root,
-            )
+            result = validate_dynamic_cache(job)
             state = "PASS" if result.valid else "FAIL"
             print(f"DYNAMIC_CACHE_VALIDATE {job.sequence_id} {state} frames={result.frame_count}")
             for error in result.errors:

@@ -65,7 +65,11 @@ def _packet(
     )
 
 
-def _semantic_manifest(source_tree_sha256: str, association_sha256: str) -> CacheManifest:
+def _semantic_manifest(
+    source_tree_sha256: str,
+    association_sha256: str,
+    frame_count: int,
+) -> CacheManifest:
     return CacheManifest(
         "ovorb.semantic-cache.v1",
         "study",
@@ -77,7 +81,7 @@ def _semantic_manifest(source_tree_sha256: str, association_sha256: str) -> Cach
         "4" * 64,
         "7" * 40,
         10,
-        4,
+        frame_count,
         None,
     )
 
@@ -85,7 +89,7 @@ def _semantic_manifest(source_tree_sha256: str, association_sha256: str) -> Cach
 def _prepare(
     root: Path,
     *,
-    pose_timestamps: tuple[int, ...] = (0, 1, 2, 3),
+    pose_timestamps: tuple[int, ...] | None = None,
     final_mask: np.ndarray | None = None,
     depth_step: int = 1000,
     run_trajectory_sha256: str | None = None,
@@ -100,8 +104,13 @@ def _prepare(
     association = dataset / "associate.txt"
     rows = []
     rgb_sha256: list[str] = []
-    selected_depth_timestamps = depth_timestamps or (0.0, 1.0, 2.0, 3.0)
-    for frame_id in range(4):
+    frame_count = len(depth_values) if depth_values is not None else 4
+    selected_depth_timestamps = depth_timestamps or tuple(
+        float(frame_id) for frame_id in range(frame_count)
+    )
+    if len(selected_depth_timestamps) != frame_count:
+        raise ValueError("depth timestamp fixture coverage mismatch")
+    for frame_id in range(frame_count):
         depth_value = (
             depth_values[frame_id]
             if depth_values is not None
@@ -128,15 +137,24 @@ def _prepare(
         _semantic_manifest(
             hash_dataset_tree(dataset),
             hashlib.sha256(association.read_bytes()).hexdigest(),
+            frame_count,
         ),
     )
     mask = np.ones((10, 10), dtype=bool)
-    for frame_id in range(4):
+    for frame_id in range(frame_count):
         packet_mask = final_mask if frame_id == 3 and final_mask is not None else mask
         writer.add(_packet(frame_id, float(frame_id), packet_mask, rgb_sha256[frame_id]))
     writer.finalize()
     trajectory = root / "CameraTrajectory.txt"
-    trajectory.write_text("\n".join(f"{float(i):.9f} 0 0 0 0 0 0 1" for i in pose_timestamps) + "\n", encoding="utf-8")
+    selected_pose_timestamps = pose_timestamps or tuple(range(frame_count))
+    trajectory.write_text(
+        "\n".join(
+            f"{float(i):.9f} 0 0 0 0 0 0 1"
+            for i in selected_pose_timestamps
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     run_manifest = root / "run_manifest.json"
     trajectory_sha256 = hashlib.sha256(trajectory.read_bytes()).hexdigest()
     association_sha256 = hashlib.sha256(association.read_bytes()).hexdigest()
@@ -148,7 +166,7 @@ def _prepare(
                 "sequence_id": "tiny",
                 "association_sha256": association_sha256,
                 "extracted_tree_sha256": hash_dataset_tree(dataset),
-                "counts": {"associations": 4},
+                "counts": {"associations": frame_count},
                 "image_dimensions": {"width": 10, "height": 10},
                 "validation_status": "VALID",
             }
@@ -171,11 +189,11 @@ def _prepare(
         "seed": 23011,
         "association_sha256": association_sha256,
         "dataset_manifest_sha256": dataset_manifest_sha256,
-        "expected_frames": 4,
-        "frame_count": 4,
+        "expected_frames": frame_count,
+        "frame_count": frame_count,
         "trajectory": {
             "path": "CameraTrajectory.txt",
-            "pose_count": len(pose_timestamps),
+            "pose_count": len(selected_pose_timestamps),
             "sha256": run_trajectory_sha256 or trajectory_sha256,
         },
     }
@@ -210,11 +228,7 @@ def test_future_observation_cannot_change_prior_score_map_hashes(tmp_path: Path)
 
     assert [row["sha256"] for row in second.frame_index[:3]] == [row["sha256"] for row in first.frame_index[:3]]
     assert second.frame_index[3]["sha256"] != first.frame_index[3]["sha256"]
-    assert validate_dynamic_cache(
-        first_job.cache_root,
-        first_job.manifest,
-        first_job.dataset_root,
-    ).valid
+    assert validate_dynamic_cache(first_job).valid
 
 
 def test_missing_exact_pose_produces_unknown_coverage(tmp_path: Path) -> None:
@@ -222,7 +236,7 @@ def test_missing_exact_pose_produces_unknown_coverage(tmp_path: Path) -> None:
     _, job = _prepare(tmp_path, pose_timestamps=(0, 2, 3))
     result = generate_dynamic_cache(job)
 
-    assert result.track_rows[1]["reason"] == "MISSING_EXACT_BOOTSTRAP_POSE"
+    assert result.track_rows[1]["reason_codes"] == ["MISSING_EXACT_BOOTSTRAP_POSE"]
     assert result.track_rows[1]["strong_dynamic"] is False
     assert len(result.frame_index) == 4
 
@@ -237,9 +251,30 @@ def test_future_depth_timestamp_is_unknown_and_depth_is_never_read(tmp_path: Pat
     result = generate_dynamic_cache(job)
 
     row = next(item for item in result.track_rows if item["frame_id"] == 1)
-    assert row["reason"] == "FUTURE_DEPTH_TIMESTAMP"
+    assert row["reason_codes"] == ["FUTURE_DEPTH_TIMESTAMP"]
     assert row["strong_dynamic"] is False
     assert row["track_id"] is None
+
+
+def test_unknown_row_records_future_depth_and_missing_pose_in_order(
+    tmp_path: Path,
+) -> None:
+    # Catches collapsing simultaneous causal failures into one lossy reason string.
+    _, job = _prepare(
+        tmp_path,
+        pose_timestamps=(0, 2, 3),
+        depth_timestamps=(0.0, 1.5, 2.0, 3.0),
+        corrupt_depth_frame=1,
+    )
+
+    result = generate_dynamic_cache(job)
+
+    row = next(item for item in result.track_rows if item["frame_id"] == 1)
+    assert row["reason_codes"] == [
+        "FUTURE_DEPTH_TIMESTAMP",
+        "MISSING_EXACT_BOOTSTRAP_POSE",
+    ]
+    assert row["strong_dynamic"] is False
 
 
 def test_manifest_binds_inputs_and_generation_fails_closed_on_mutation(tmp_path: Path) -> None:
@@ -309,7 +344,7 @@ def test_resume_reuses_valid_atomic_outputs_and_moving_track_confirms(tmp_path: 
     assert not list(job.cache_root.rglob("*.partial"))
     final_score_map = np.load(job.cache_root / second.frame_index[-1]["path"], allow_pickle=False)
     assert np.all(final_score_map >= 0.70)
-    assert validate_dynamic_cache(job.cache_root, job.manifest, job.dataset_root).valid
+    assert validate_dynamic_cache(job).valid
 
 
 def test_interrupted_prefix_orphan_and_partial_resume(tmp_path: Path) -> None:
@@ -331,7 +366,7 @@ def test_interrupted_prefix_orphan_and_partial_resume(tmp_path: Path) -> None:
 
     assert [row["sha256"] for row in resumed.frame_index] == original_hashes
     assert not list(job.cache_root.rglob("*.partial"))
-    assert validate_dynamic_cache(job.cache_root, job.manifest, job.dataset_root).valid
+    assert validate_dynamic_cache(job).valid
 
 
 def test_validator_rejects_wrong_frame_and_semantic_identity(tmp_path: Path) -> None:
@@ -345,7 +380,7 @@ def test_validator_rejects_wrong_frame_and_semantic_identity(tmp_path: Path) -> 
     _write_jsonl(index_path, index)
     _refresh_complete_hashes(job.cache_root)
 
-    validation = validate_dynamic_cache(job.cache_root, job.manifest, job.dataset_root)
+    validation = validate_dynamic_cache(job)
 
     assert validation.valid is False
     assert any("semantic identity" in error for error in validation.errors)
@@ -365,39 +400,116 @@ def test_validator_rejects_duplicate_or_missing_instance_rows(
     _write_jsonl(tracks_path, rows)
     _refresh_complete_hashes(job.cache_root)
 
-    validation = validate_dynamic_cache(job.cache_root, job.manifest, job.dataset_root)
+    validation = validate_dynamic_cache(job)
 
     assert validation.valid is False
     assert any("instance identity" in error for error in validation.errors)
 
 
+def test_real_strong_history_clamps_actionable_score_until_exit(tmp_path: Path) -> None:
+    # Catches exposing raw hysteresis-band probability as an actionable removal score.
+    depth_values = (1000, 2000, 4000, 7000) + (7000,) * 7
+    _, job = _prepare(tmp_path, depth_values=depth_values)
+
+    result = generate_dynamic_cache(job)
+
+    by_frame = {int(row["frame_id"]): row for row in result.track_rows}
+    assert by_frame[7]["dynamic_probability"] == 0.6
+    assert by_frame[8]["dynamic_probability"] == 0.4
+    assert by_frame[7]["strong_dynamic"] is True
+    assert by_frame[8]["strong_dynamic"] is True
+    assert by_frame[7]["score_map_probability"] == 0.70
+    assert by_frame[8]["score_map_probability"] == 0.70
+    assert by_frame[9]["dynamic_probability"] == 0.2
+    assert by_frame[9]["strong_dynamic"] is False
+    assert by_frame[9]["score_map_probability"] == 0.2
+    assert validate_dynamic_cache(job).valid
+
+
 @pytest.mark.parametrize(
-    ("probability", "expected_valid"),
-    [(0.40, True), (0.55, True), (0.399, False)],
+    "mutation",
+    [
+        "track_id",
+        "reason",
+        "count",
+        "geometry",
+        "state_transition",
+        "type",
+        "range",
+        "strong_raw_below_exit",
+        "strong_score_below_enter",
+        "nonstrong_score_mismatch",
+    ],
 )
-def test_validator_uses_exit_threshold_for_strong_hysteresis_state(
+def test_validator_rejects_track_history_and_row_semantic_tamper(
     tmp_path: Path,
-    probability: float,
-    expected_valid: bool,
+    mutation: str,
 ) -> None:
-    # Catches rejecting a previously entered strong track while it remains in the hysteresis band.
+    # Catches validating rows independently instead of against their causal track history.
     _, job = _prepare(tmp_path, depth_values=(1000, 2000, 4000, 7000))
     generate_dynamic_cache(job)
     tracks_path = job.cache_root / "dynamic_tracks.jsonl"
     rows = _jsonl(tracks_path)
-    row = rows[-1]
-    assert row["strong_dynamic"] is True
-    row["dynamic_probability"] = probability
-    row["score_map_probability"] = probability
-    row["confirming_observations"] = 0
+    row = rows[0] if mutation == "nonstrong_score_mismatch" else rows[-1]
+    if mutation == "track_id":
+        row["track_id"] = 999
+    elif mutation == "reason":
+        row["reason_codes"] = ["NOT_AN_ALLOWED_REASON"]
+    elif mutation == "count":
+        row["observation_count"] = 999
+    elif mutation == "geometry":
+        row["centroid_world"] = [9.0, 9.0, 9.0]
+    elif mutation == "state_transition":
+        row["strong_dynamic"] = False
+    elif mutation == "type":
+        row["observation_count"] = True
+    elif mutation == "range":
+        row["dynamic_probability"] = 1.1
+    elif mutation == "strong_raw_below_exit":
+        row["dynamic_probability"] = 0.399
+    elif mutation == "strong_score_below_enter":
+        row["score_map_probability"] = 0.699
+    else:
+        assert row["strong_dynamic"] is False
+        row["score_map_probability"] = 0.9
     _write_jsonl(tracks_path, rows)
     _refresh_complete_hashes(job.cache_root)
 
-    validation = validate_dynamic_cache(job.cache_root, job.manifest, job.dataset_root)
+    validation = validate_dynamic_cache(job)
 
-    assert validation.valid is expected_valid
-    if not expected_valid:
-        assert any("dynamic state" in error for error in validation.errors)
+    assert validation.valid is False
+
+
+def test_validator_rejects_track_row_and_score_map_disagreement(tmp_path: Path) -> None:
+    # Catches failing to bind each semantic mask's pixels to its actionable row probability.
+    _, job = _prepare(tmp_path, depth_values=(1000, 2000, 4000, 7000))
+    generate_dynamic_cache(job)
+    tracks_path = job.cache_root / "dynamic_tracks.jsonl"
+    rows = _jsonl(tracks_path)
+    rows[-1]["score_map_probability"] = 0.8
+    _write_jsonl(tracks_path, rows)
+    _refresh_complete_hashes(job.cache_root)
+
+    validation = validate_dynamic_cache(job)
+
+    assert validation.valid is False
+
+
+def test_validator_rejects_self_consistent_score_map_replacement(tmp_path: Path) -> None:
+    # Catches trusting a coordinated score-map/index/completion rewrite.
+    _, job = _prepare(tmp_path)
+    generate_dynamic_cache(job)
+    index_path = job.cache_root / "cache_index.jsonl"
+    index = _jsonl(index_path)
+    score_path = job.cache_root / index[0]["path"]
+    np.save(score_path, np.zeros((10, 10), dtype=np.float32), allow_pickle=False)
+    index[0]["sha256"] = hashlib.sha256(score_path.read_bytes()).hexdigest()
+    _write_jsonl(index_path, index)
+    _refresh_complete_hashes(job.cache_root)
+
+    validation = validate_dynamic_cache(job)
+
+    assert validation.valid is False
 
 
 def test_diagnostic_overlays_are_predeclared_bound_and_validated(tmp_path: Path) -> None:
@@ -408,7 +520,7 @@ def test_diagnostic_overlays_are_predeclared_bound_and_validated(tmp_path: Path)
 
     assert [row["frame_id"] for row in result.diagnostic_index] == [1, 2, 3]
     assert all((job.cache_root / row["path"]).is_file() for row in result.diagnostic_index)
-    assert validate_dynamic_cache(job.cache_root, job.manifest, job.dataset_root).valid
+    assert validate_dynamic_cache(job).valid
 
 
 @pytest.mark.parametrize("mutation", ["missing", "extra", "tampered"])
@@ -427,7 +539,7 @@ def test_validator_rejects_missing_extra_or_tampered_diagnostic_overlay(
     else:
         first_overlay.write_bytes(b"tampered diagnostic overlay")
 
-    validation = validate_dynamic_cache(job.cache_root, job.manifest, job.dataset_root)
+    validation = validate_dynamic_cache(job)
 
     assert validation.valid is False
     assert any("diagnostic" in error for error in validation.errors)
@@ -454,7 +566,7 @@ def test_validator_rejects_self_consistent_diagnostic_overlay_tamper(
     _write_jsonl(diagnostics_path, diagnostic_rows)
     _refresh_complete_hashes(job.cache_root)
 
-    validation = validate_dynamic_cache(job.cache_root, job.manifest, job.dataset_root)
+    validation = validate_dynamic_cache(job)
 
     assert validation.valid is False
     assert any("diagnostic" in error for error in validation.errors)

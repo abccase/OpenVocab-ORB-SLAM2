@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass
 import hashlib
 import io
@@ -176,6 +177,15 @@ class DynamicCacheResult:
     diagnostic_index: tuple[dict[str, object], ...]
 
 
+@dataclass(frozen=True)
+class _ReplayFrame:
+    index_entry: dict[str, object]
+    score_map_bytes: bytes
+    track_rows: tuple[dict[str, object], ...]
+    diagnostic_entry: dict[str, object] | None
+    diagnostic_bytes: bytes | None
+
+
 def build_dynamic_job(
     project_root: Path,
     sequence_id: str,
@@ -282,55 +292,15 @@ def build_dynamic_job(
     )
 
 
-def generate_dynamic_cache(job: DynamicCacheJob) -> DynamicCacheResult:
-    """Generate frames in timestamp order; frame ``t`` reads no later input."""
-    _validate_bound_inputs(job)
-    cache_root = job.cache_root
-    manifest_path = cache_root / "cache_manifest.json"
-    if manifest_path.exists():
-        observed = DynamicCacheManifest.from_primitive(_load_json(manifest_path))
-        if observed != job.manifest:
-            raise ValueError("dynamic cache manifest identity mismatch")
-    else:
-        _write_json_atomic(manifest_path, job.manifest.to_primitive())
-
+def _replay_dynamic_frames(job: DynamicCacheJob) -> Iterator[_ReplayFrame]:
+    """Derive every dynamic output causally from the job's bound inputs."""
     semantic_index = _read_jsonl(job.semantic_cache_root / "cache_index.jsonl")
-    semantic_identity = _semantic_identity_rows(job.semantic_cache_root, semantic_index)
-    if _sha256_jsonl(semantic_identity) != job.manifest.semantic_identity_sha256:
-        raise ValueError("semantic identity hash mismatch")
-    semantic_identity_path = cache_root / "semantic_identity.jsonl"
-    if semantic_identity_path.exists():
-        if _sha256_file(semantic_identity_path) != job.manifest.semantic_identity_sha256:
-            raise ValueError("existing semantic identity mismatch")
-    else:
-        _write_jsonl_atomic(semantic_identity_path, semantic_identity)
-
-    complete_path = cache_root / "cache_complete.json"
-    if complete_path.exists():
-        validation = validate_dynamic_cache(
-            cache_root,
-            job.manifest,
-            job.dataset_root,
-        )
-        if not validation.valid:
-            raise ValueError("existing complete dynamic cache is invalid: " + "; ".join(validation.errors))
-        return _load_result(cache_root)
-
-    existing_index = _read_jsonl(cache_root / "cache_index.jsonl")
-    if [int(row.get("frame_id", -1)) for row in existing_index] != list(range(len(existing_index))):
-        raise ValueError("partial dynamic cache index is not a contiguous prefix")
-    if len(existing_index) > job.manifest.expected_frame_count:
-        raise ValueError("partial dynamic cache has extra frames")
-
     associations = _read_association(job.association_path)
     if len(semantic_index) != len(associations):
         raise ValueError("semantic cache index coverage mismatch")
     poses = _read_trajectory(job.trajectory_path)
     active_tracks: list[DynamicTrack] = []
     next_track_id = 0
-    track_rows: list[dict[str, object]] = []
-    frame_index = list(existing_index)
-    diagnostic_index: list[dict[str, object]] = []
     diagnostic_by_frame = {
         int(item["frame_id"]): item for item in job.manifest.diagnostic_frames
     }
@@ -343,35 +313,53 @@ def generate_dynamic_cache(job: DynamicCacheJob) -> DynamicCacheResult:
             or float(semantic_entry.get("timestamp", math.nan)) != timestamp
         ):
             raise ValueError("semantic cache index is not aligned with associations")
-        packet_path = job.semantic_cache_root / str(semantic_entry["path"])
-        packet = read_cache_frame(packet_path)
+        packet = read_cache_frame(
+            job.semantic_cache_root / str(semantic_entry["path"])
+        )
         if packet.frame_id != frame_id or packet.timestamp != timestamp:
             raise ValueError("semantic packet is not aligned with associations")
         if packet.source_image_sha256 != _sha256_file(job.dataset_root / rgb_relative):
             raise ValueError("semantic packet source image hash mismatch")
-        masks = [decode_binary_mask_rle(instance.mask_rle) for instance in packet.instances]
-        score_map = np.zeros((packet.image_height, packet.image_width), dtype=np.float32)
+        masks = [
+            decode_binary_mask_rle(instance.mask_rle)
+            for instance in packet.instances
+        ]
+        score_map = np.zeros(
+            (packet.image_height, packet.image_width),
+            dtype=np.float32,
+        )
         pose = poses.get(timestamp)
-        unknown_reason = None
+        reason_codes: list[str] = []
         if depth_timestamp > timestamp:
-            unknown_reason = "FUTURE_DEPTH_TIMESTAMP"
-        elif pose is None:
-            unknown_reason = "MISSING_EXACT_BOOTSTRAP_POSE"
+            reason_codes.append("FUTURE_DEPTH_TIMESTAMP")
+        if pose is None:
+            reason_codes.append("MISSING_EXACT_BOOTSTRAP_POSE")
+        frame_track_rows: list[dict[str, object]] = []
 
-        if unknown_reason is not None:
+        if reason_codes:
             for track in [item for item in active_tracks if not item.terminated]:
                 track.mark_missed(timestamp, job.config)
             for instance, mask in zip(packet.instances, masks):
+                probability = job.config.unknown_dynamic_probability
                 score_map[mask] = np.maximum(
-                    score_map[mask], np.float32(job.config.unknown_dynamic_probability)
+                    score_map[mask],
+                    np.float32(probability),
                 )
-                track_rows.append(
-                    _unknown_row(frame_id, timestamp, instance.local_id, instance.label,
-                                 job.config.unknown_dynamic_probability,
-                                 unknown_reason)
+                frame_track_rows.append(
+                    _unknown_row(
+                        frame_id,
+                        timestamp,
+                        instance.local_id,
+                        instance.label,
+                        probability,
+                        reason_codes,
+                    )
                 )
         else:
-            depth = cv2.imread(str(job.dataset_root / depth_relative), cv2.IMREAD_UNCHANGED)
+            depth = cv2.imread(
+                str(job.dataset_root / depth_relative),
+                cv2.IMREAD_UNCHANGED,
+            )
             if (
                 depth is None
                 or depth.ndim != 2
@@ -412,14 +400,30 @@ def generate_dynamic_cache(job: DynamicCacheJob) -> DynamicCacheResult:
                     )
                 )
             association = associate_tracks(current_tracks, observations, job.config)
-            states: dict[int, tuple[int, TrackState, str, np.ndarray, np.ndarray]] = {}
+            states: dict[
+                int,
+                tuple[int, TrackState, str, np.ndarray, np.ndarray],
+            ] = {}
             for track_id, observation_index in association.assignments.items():
-                track = next(item for item in current_tracks if item.track_id == track_id)
+                track = next(
+                    item for item in current_tracks if item.track_id == track_id
+                )
                 observation = observations[observation_index]
                 centroid, mad = geometry_by_observation[observation_index]
-                state = track.update(centroid, timestamp=timestamp, mad=mad, config=job.config)
+                state = track.update(
+                    centroid,
+                    timestamp=timestamp,
+                    mad=mad,
+                    config=job.config,
+                )
                 track.last_mask = observation.mask.copy()
-                states[observation.local_id] = (track.track_id, state, "TRACK_UPDATED", centroid, mad)
+                states[observation.local_id] = (
+                    track.track_id,
+                    state,
+                    "TRACK_UPDATED",
+                    centroid,
+                    mad,
+                )
             unassigned_track_ids = set(association.unassigned_tracks)
             for track in current_tracks:
                 if track.track_id in unassigned_track_ids:
@@ -438,17 +442,29 @@ def generate_dynamic_cache(job: DynamicCacheJob) -> DynamicCacheResult:
                 track.last_mask = observation.mask.copy()
                 active_tracks.append(track)
                 state = TrackState(track.track_id, 0.0, False, 1, 0, "NEW_TRACK")
-                states[observation.local_id] = (track.track_id, state, "NEW_TRACK", centroid, mad)
+                states[observation.local_id] = (
+                    track.track_id,
+                    state,
+                    "NEW_TRACK",
+                    centroid,
+                    mad,
+                )
 
             for instance, mask in zip(packet.instances, masks):
                 if instance.local_id in invalid_reasons:
                     probability = job.config.unknown_dynamic_probability
                     row = _unknown_row(
-                        frame_id, timestamp, instance.local_id, instance.label,
-                        probability, invalid_reasons[instance.local_id],
+                        frame_id,
+                        timestamp,
+                        instance.local_id,
+                        instance.label,
+                        probability,
+                        [invalid_reasons[instance.local_id]],
                     )
                 else:
-                    track_id, state, reason, centroid, mad = states[instance.local_id]
+                    track_id, state, reason_code, centroid, mad = states[
+                        instance.local_id
+                    ]
                     probability = _score_probability(state, job.config)
                     row = {
                         "frame_id": frame_id,
@@ -463,37 +479,29 @@ def generate_dynamic_cache(job: DynamicCacheJob) -> DynamicCacheResult:
                         "strong_dynamic": state.strong_dynamic,
                         "observation_count": state.observation_count,
                         "confirming_observations": state.confirming_observations,
-                        "reason": reason,
+                        "reason_codes": [reason_code],
                     }
-                score_map[mask] = np.maximum(score_map[mask], np.float32(probability))
-                track_rows.append(row)
+                score_map[mask] = np.maximum(
+                    score_map[mask],
+                    np.float32(probability),
+                )
+                frame_track_rows.append(row)
 
-        encoded = _encode_npy(score_map)
-        digest = hashlib.sha256(encoded).hexdigest()
+        score_bytes = _encode_npy(score_map)
+        score_digest = hashlib.sha256(score_bytes).hexdigest()
         relative = Path("score_maps") / f"{frame_id:06d}.npy"
-        entry: dict[str, object] = {
+        index_entry: dict[str, object] = {
             "frame_id": frame_id,
             "timestamp": timestamp,
             "path": relative.as_posix(),
-            "sha256": digest,
+            "sha256": score_digest,
             "semantic_packet_sha256": str(semantic_entry["sha256"]),
             "height": packet.image_height,
             "width": packet.image_width,
             "dtype": "float32",
         }
-        target = cache_root / relative
-        if frame_id < len(existing_index):
-            if existing_index[frame_id] != entry or _sha256_file(target) != digest:
-                raise ValueError(f"existing dynamic frame mismatch: {frame_id}")
-        else:
-            if target.exists():
-                if _sha256_file(target) != digest:
-                    raise ValueError(f"orphan dynamic frame mismatch: {frame_id}")
-            else:
-                _write_bytes_atomic(target, encoded)
-            frame_index.append(entry)
-            _write_jsonl_atomic(cache_root / "cache_index.jsonl", frame_index)
-
+        diagnostic_entry = None
+        diagnostic_bytes = None
         diagnostic = diagnostic_by_frame.get(frame_id)
         if diagnostic is not None:
             diagnostic_relative = Path(str(diagnostic["path"]))
@@ -501,34 +509,95 @@ def generate_dynamic_cache(job: DynamicCacheJob) -> DynamicCacheResult:
                 job.dataset_root / str(diagnostic["source_path"]),
                 score_map,
             )
-            diagnostic_digest = hashlib.sha256(diagnostic_bytes).hexdigest()
-            diagnostic_entry: dict[str, object] = {
+            diagnostic_entry = {
                 "fraction": diagnostic["fraction"],
                 "frame_id": frame_id,
                 "timestamp": timestamp,
                 "path": diagnostic_relative.as_posix(),
-                "sha256": diagnostic_digest,
+                "sha256": hashlib.sha256(diagnostic_bytes).hexdigest(),
                 "source_image_sha256": packet.source_image_sha256,
-                "score_map_sha256": digest,
+                "score_map_sha256": score_digest,
                 "width": packet.image_width,
                 "height": packet.image_height,
             }
-            diagnostic_target = cache_root / diagnostic_relative
+        yield _ReplayFrame(
+            index_entry,
+            score_bytes,
+            tuple(frame_track_rows),
+            diagnostic_entry,
+            diagnostic_bytes,
+        )
+
+
+def generate_dynamic_cache(job: DynamicCacheJob) -> DynamicCacheResult:
+    """Generate frames in timestamp order; frame ``t`` reads no later input."""
+    _validate_bound_inputs(job)
+    cache_root = job.cache_root
+    manifest_path = cache_root / "cache_manifest.json"
+    if manifest_path.exists():
+        observed = DynamicCacheManifest.from_primitive(_load_json(manifest_path))
+        if observed != job.manifest:
+            raise ValueError("dynamic cache manifest identity mismatch")
+    else:
+        _write_json_atomic(manifest_path, job.manifest.to_primitive())
+
+    semantic_index = _read_jsonl(job.semantic_cache_root / "cache_index.jsonl")
+    semantic_identity = _semantic_identity_rows(job.semantic_cache_root, semantic_index)
+    if _sha256_jsonl(semantic_identity) != job.manifest.semantic_identity_sha256:
+        raise ValueError("semantic identity hash mismatch")
+    semantic_identity_path = cache_root / "semantic_identity.jsonl"
+    if semantic_identity_path.exists():
+        if _sha256_file(semantic_identity_path) != job.manifest.semantic_identity_sha256:
+            raise ValueError("existing semantic identity mismatch")
+    else:
+        _write_jsonl_atomic(semantic_identity_path, semantic_identity)
+
+    complete_path = cache_root / "cache_complete.json"
+    if complete_path.exists():
+        validation = validate_dynamic_cache(job)
+        if not validation.valid:
+            raise ValueError("existing complete dynamic cache is invalid: " + "; ".join(validation.errors))
+        return _load_result(cache_root)
+
+    existing_index = _read_jsonl(cache_root / "cache_index.jsonl")
+    if len(existing_index) > job.manifest.expected_frame_count:
+        raise ValueError("partial dynamic cache has extra frames")
+    frame_index = list(existing_index)
+    track_rows: list[dict[str, object]] = []
+    diagnostic_index: list[dict[str, object]] = []
+    for frame_id, frame in enumerate(_replay_dynamic_frames(job)):
+        target = cache_root / str(frame.index_entry["path"])
+        digest = str(frame.index_entry["sha256"])
+        if frame_id < len(existing_index):
+            if (
+                existing_index[frame_id] != frame.index_entry
+                or _sha256_file(target) != digest
+            ):
+                raise ValueError(f"existing dynamic frame mismatch: {frame_id}")
+        else:
+            if target.exists():
+                if _sha256_file(target) != digest:
+                    raise ValueError(f"orphan dynamic frame mismatch: {frame_id}")
+            else:
+                _write_bytes_atomic(target, frame.score_map_bytes)
+            frame_index.append(frame.index_entry)
+            _write_jsonl_atomic(cache_root / "cache_index.jsonl", frame_index)
+        if frame.diagnostic_entry is not None:
+            diagnostic_target = cache_root / str(frame.diagnostic_entry["path"])
+            diagnostic_digest = str(frame.diagnostic_entry["sha256"])
             if diagnostic_target.exists():
                 if _sha256_file(diagnostic_target) != diagnostic_digest:
-                    raise ValueError(f"existing diagnostic overlay mismatch: {frame_id}")
+                    raise ValueError(
+                        f"existing diagnostic overlay mismatch: {frame_id}"
+                    )
             else:
-                _write_bytes_atomic(diagnostic_target, diagnostic_bytes)
-            diagnostic_index.append(diagnostic_entry)
-
+                assert frame.diagnostic_bytes is not None
+                _write_bytes_atomic(diagnostic_target, frame.diagnostic_bytes)
+            diagnostic_index.append(frame.diagnostic_entry)
+        track_rows.extend(frame.track_rows)
     _write_jsonl_atomic(cache_root / "dynamic_tracks.jsonl", track_rows)
     _write_jsonl_atomic(cache_root / "diagnostics_index.jsonl", diagnostic_index)
-    validation = validate_dynamic_cache(
-        cache_root,
-        job.manifest,
-        job.dataset_root,
-        require_complete=False,
-    )
+    validation = validate_dynamic_cache(job, require_complete=False)
     if not validation.valid:
         raise ValueError("generated dynamic cache is invalid: " + "; ".join(validation.errors))
     _write_json_atomic(
@@ -544,11 +613,7 @@ def generate_dynamic_cache(job: DynamicCacheJob) -> DynamicCacheResult:
             "frame_count": validation.frame_count,
         },
     )
-    final_validation = validate_dynamic_cache(
-        cache_root,
-        job.manifest,
-        job.dataset_root,
-    )
+    final_validation = validate_dynamic_cache(job)
     if not final_validation.valid:
         raise ValueError("completed dynamic cache is invalid: " + "; ".join(final_validation.errors))
     return DynamicCacheResult(
@@ -560,219 +625,140 @@ def generate_dynamic_cache(job: DynamicCacheJob) -> DynamicCacheResult:
 
 
 def validate_dynamic_cache(
-    cache_root: Path,
-    expected: DynamicCacheManifest,
-    dataset_root: Path,
+    job: DynamicCacheJob,
     *,
     require_complete: bool = True,
 ) -> DynamicCacheValidation:
-    root = Path(cache_root)
-    source_root = Path(dataset_root)
+    """Replay bound inputs and compare every derived cache byte without writes."""
+    root = job.cache_root
     errors: list[str] = []
+    try:
+        _validate_bound_inputs(job)
+        expected_identity = _semantic_identity_rows(
+            job.semantic_cache_root,
+            _read_jsonl(job.semantic_cache_root / "cache_index.jsonl"),
+        )
+    except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
+        return DynamicCacheValidation(
+            False,
+            (f"invalid bound dynamic-cache inputs: {exc}",),
+            0,
+        )
+
     manifest_path = root / "cache_manifest.json"
     try:
-        observed = DynamicCacheManifest.from_primitive(_load_json(manifest_path))
-        if observed != expected:
-            errors.append("manifest identity mismatch")
+        observed_manifest = DynamicCacheManifest.from_primitive(
+            _load_json(manifest_path)
+        )
+        if observed_manifest != job.manifest:
+            raise ValueError("manifest identity mismatch")
     except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
         errors.append(f"invalid dynamic cache manifest: {exc}")
+
     identity_path = root / "semantic_identity.jsonl"
-    semantic_identity: list[dict[str, Any]] = []
     try:
-        semantic_identity = _read_jsonl(identity_path)
-        if _sha256_file(identity_path) != expected.semantic_identity_sha256:
-            raise ValueError("semantic identity hash mismatch")
-        if len(semantic_identity) != expected.expected_frame_count:
-            raise ValueError("semantic identity frame coverage mismatch")
-        for frame_id, row in enumerate(semantic_identity):
-            if set(row) != {
-                "frame_id", "timestamp", "semantic_packet_sha256",
-                "source_image_sha256", "width", "height", "instances",
-            }:
-                raise ValueError("semantic identity fields mismatch")
-            if int(row["frame_id"]) != frame_id or not isinstance(row["instances"], list):
-                raise ValueError("semantic identity ordering mismatch")
-            local_ids = [int(item["local_id"]) for item in row["instances"]]
-            if local_ids != list(range(len(local_ids))):
-                raise ValueError("semantic instance local IDs mismatch")
+        observed_identity = _read_jsonl(identity_path)
+        if _jsonl_bytes(observed_identity) != _jsonl_bytes(expected_identity):
+            raise ValueError("semantic identity does not match bound packets")
     except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
         errors.append(f"invalid semantic identity: {exc}")
+
+    index_path = root / "cache_index.jsonl"
+    observed_index: list[dict[str, Any]] = []
     try:
-        index = _read_jsonl(root / "cache_index.jsonl")
-    except (OSError, ValueError, json.JSONDecodeError) as exc:
-        return DynamicCacheValidation(False, tuple(errors + [f"invalid dynamic cache index: {exc}"]), 0)
-    referenced: set[Path] = set()
-    timestamps: set[float] = set()
-    score_maps: dict[int, np.ndarray] = {}
-    for expected_frame_id, entry in enumerate(index):
-        try:
-            if set(entry) != {
-                "frame_id", "timestamp", "path", "sha256",
-                "semantic_packet_sha256", "height", "width", "dtype",
-            }:
-                raise ValueError("index fields mismatch")
-            if int(entry["frame_id"]) != expected_frame_id:
-                raise ValueError("frame IDs are not contiguous")
-            timestamp = float(entry["timestamp"])
-            if not math.isfinite(timestamp) or timestamp in timestamps:
-                raise ValueError("timestamp is invalid or duplicate")
-            timestamps.add(timestamp)
-            if expected_frame_id >= len(semantic_identity):
-                raise ValueError("missing semantic identity")
-            identity = semantic_identity[expected_frame_id]
-            if (
-                timestamp != float(identity["timestamp"])
-                or entry["semantic_packet_sha256"]
-                != identity["semantic_packet_sha256"]
-                or int(entry["height"]) != int(identity["height"])
-                or int(entry["width"]) != int(identity["width"])
-            ):
-                raise ValueError("semantic identity mismatch")
-            relative = Path(str(entry["path"]))
-            if relative.is_absolute() or ".." in relative.parts or relative.parent != Path("score_maps"):
-                raise ValueError("unsafe score-map path")
-            path = root / relative
-            referenced.add(path)
-            if _sha256_file(path) != entry["sha256"]:
-                raise ValueError("score-map hash mismatch")
-            with path.open("rb") as stream:
-                score_map = np.load(stream, allow_pickle=False)
-            shape = (int(entry["height"]), int(entry["width"]))
-            if score_map.shape != shape or score_map.dtype != np.float32 or entry["dtype"] != "float32":
-                raise ValueError("score-map shape or dtype mismatch")
-            if not np.all(np.isfinite(score_map)) or np.any(score_map < 0.0) or np.any(score_map > 1.0):
-                raise ValueError("score-map values are outside [0, 1]")
-            score_maps[expected_frame_id] = score_map
-        except (OSError, ValueError, KeyError, TypeError) as exc:
-            errors.append(f"invalid dynamic index entry {expected_frame_id}: {exc}")
-    if len(index) != expected.expected_frame_count:
-        errors.append(f"frame coverage mismatch: {len(index)} != {expected.expected_frame_count}")
-    observed_maps = set((root / "score_maps").glob("*.npy")) if (root / "score_maps").is_dir() else set()
-    for extra in sorted(observed_maps - referenced):
+        observed_index = _read_jsonl(index_path)
+    except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
+        errors.append(f"invalid dynamic cache index: {exc}")
+
+    referenced_maps: set[Path] = set()
+    expected_index: list[dict[str, object]] = []
+    expected_tracks: list[dict[str, object]] = []
+    expected_diagnostics: list[dict[str, object]] = []
+    expected_diagnostic_bytes: dict[str, bytes] = {}
+    replay_frame_id = -1
+    try:
+        for frame_id, frame in enumerate(_replay_dynamic_frames(job)):
+            replay_frame_id = frame_id
+            expected_index.append(frame.index_entry)
+            expected_tracks.extend(frame.track_rows)
+            path = root / str(frame.index_entry["path"])
+            referenced_maps.add(path)
+            if path.read_bytes() != frame.score_map_bytes:
+                raise ValueError("score map does not match causal replay")
+            if frame.diagnostic_entry is not None:
+                assert frame.diagnostic_bytes is not None
+                expected_diagnostics.append(frame.diagnostic_entry)
+                expected_diagnostic_bytes[
+                    str(frame.diagnostic_entry["path"])
+                ] = frame.diagnostic_bytes
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        errors.append(f"invalid causal replay frame {replay_frame_id}: {exc}")
+    try:
+        if _jsonl_bytes(observed_index) != _jsonl_bytes(expected_index):
+            raise ValueError(
+                "semantic identity or dynamic index does not match causal replay"
+            )
+    except (ValueError, TypeError) as exc:
+        errors.append(f"invalid dynamic cache index: {exc}")
+    observed_maps = (
+        set((root / "score_maps").glob("*.npy"))
+        if (root / "score_maps").is_dir()
+        else set()
+    )
+    for extra in sorted(observed_maps - referenced_maps):
         errors.append(f"extra score map: {extra.name}")
+
     tracks_path = root / "dynamic_tracks.jsonl"
     try:
-        rows = _read_jsonl(tracks_path)
-        expected_instances = {
-            (int(frame["frame_id"]), int(instance["local_id"])): (
-                float(frame["timestamp"]),
-                str(instance["label"]),
+        observed_tracks = _read_jsonl(tracks_path)
+        if _jsonl_bytes(observed_tracks) != _jsonl_bytes(expected_tracks):
+            raise ValueError(
+                "instance identity or causal track replay mismatch"
             )
-            for frame in semantic_identity
-            for instance in frame["instances"]
-        }
-        observed_instances: set[tuple[int, int]] = set()
-        for row in rows:
-            if set(row) != {
-                "frame_id", "timestamp", "local_id", "track_id", "label",
-                "centroid_world", "mad_world", "dynamic_probability",
-                "score_map_probability", "strong_dynamic", "observation_count",
-                "confirming_observations", "reason",
-            }:
-                raise ValueError("track row fields mismatch")
-            frame_id = int(row["frame_id"])
-            local_id = int(row["local_id"])
-            identity = (frame_id, local_id)
-            if identity in observed_instances or identity not in expected_instances:
-                raise ValueError("duplicate or unknown instance identity")
-            observed_instances.add(identity)
-            expected_timestamp, expected_label = expected_instances[identity]
-            if (
-                float(row["timestamp"]) != expected_timestamp
-                or str(row["label"]) != expected_label
-            ):
-                raise ValueError("instance identity mismatch")
-            probability = float(row["score_map_probability"])
-            if frame_id < 0 or frame_id >= expected.expected_frame_count:
-                raise ValueError("track row frame is outside coverage")
-            exit_threshold = float(expected.dynamic_config["dynamic_exit_threshold"])
-            if (
-                not 0.0 <= probability <= 1.0
-                or bool(row["strong_dynamic"]) and probability < exit_threshold
-            ):
-                raise ValueError("track row dynamic state is invalid")
-        if observed_instances != set(expected_instances):
-            raise ValueError("missing instance identity")
     except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
         errors.append(f"invalid dynamic tracks: {exc}")
+
     diagnostics_path = root / "diagnostics_index.jsonl"
     referenced_diagnostics: set[Path] = set()
     try:
-        diagnostic_rows = _read_jsonl(diagnostics_path)
-        if len(diagnostic_rows) != len(expected.diagnostic_frames):
-            raise ValueError("diagnostic coverage mismatch")
-        score_by_frame = {int(row["frame_id"]): row for row in index}
-        for declared, row in zip(expected.diagnostic_frames, diagnostic_rows):
-            frame_id = int(declared["frame_id"])
-            if set(row) != {
-                "fraction", "frame_id", "timestamp", "path", "sha256",
-                "source_image_sha256", "score_map_sha256", "width", "height",
-            }:
-                raise ValueError("diagnostic fields mismatch")
-            if (
-                row["fraction"] != declared["fraction"]
-                or int(row["frame_id"]) != frame_id
-                or float(row["timestamp"]) != float(declared["timestamp"])
-                or row["path"] != declared["path"]
-                or row["source_image_sha256"] != declared["source_image_sha256"]
-                or row["score_map_sha256"] != score_by_frame[frame_id]["sha256"]
-            ):
-                raise ValueError("diagnostic identity mismatch")
-            relative = Path(str(row["path"]))
-            if relative.is_absolute() or ".." in relative.parts or relative.parent != Path("diagnostics"):
-                raise ValueError("unsafe diagnostic path")
-            source_relative = Path(str(declared["source_path"]))
-            if (
-                source_relative.is_absolute()
-                or ".." in source_relative.parts
-                or source_relative.parts[:1] != ("rgb",)
-            ):
-                raise ValueError("unsafe diagnostic source path")
-            source_path = source_root / source_relative
-            if _sha256_file(source_path) != declared["source_image_sha256"]:
-                raise ValueError("diagnostic source image hash mismatch")
-            expected_bytes = _render_diagnostic_overlay(
-                source_path,
-                score_maps[frame_id],
-            )
-            expected_sha256 = hashlib.sha256(expected_bytes).hexdigest()
-            if row["sha256"] != expected_sha256:
-                raise ValueError("diagnostic derived-content hash mismatch")
-            path = root / relative
+        observed_diagnostics = _read_jsonl(diagnostics_path)
+        if _jsonl_bytes(observed_diagnostics) != _jsonl_bytes(expected_diagnostics):
+            raise ValueError("diagnostic index does not match causal replay")
+        for entry in expected_diagnostics:
+            path = root / str(entry["path"])
             referenced_diagnostics.add(path)
-            observed_bytes = path.read_bytes()
-            if observed_bytes != expected_bytes:
-                raise ValueError("diagnostic derived-content mismatch")
-            if hashlib.sha256(observed_bytes).hexdigest() != row["sha256"]:
-                raise ValueError("diagnostic hash mismatch")
-            image = cv2.imread(str(path), cv2.IMREAD_COLOR)
-            if image is None or image.shape[:2] != (int(row["height"]), int(row["width"])):
-                raise ValueError("diagnostic dimensions mismatch")
+            if path.read_bytes() != expected_diagnostic_bytes[str(entry["path"])]:
+                raise ValueError("diagnostic overlay does not match causal replay")
     except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
         errors.append(f"invalid diagnostics: {exc}")
-    observed_diagnostics = (
+    observed_overlay_paths = (
         set((root / "diagnostics").glob("*.png"))
         if (root / "diagnostics").is_dir()
         else set()
     )
-    for extra in sorted(observed_diagnostics - referenced_diagnostics):
+    for extra in sorted(observed_overlay_paths - referenced_diagnostics):
         errors.append(f"extra diagnostic overlay: {extra.name}")
+
     if require_complete:
         try:
             complete = _load_json(root / "cache_complete.json")
             expected_complete = {
                 "manifest_sha256": _sha256_file(manifest_path),
-                "index_sha256": _sha256_file(root / "cache_index.jsonl"),
+                "index_sha256": _sha256_file(index_path),
                 "tracks_sha256": _sha256_file(tracks_path),
                 "semantic_identity_sha256": _sha256_file(identity_path),
                 "diagnostics_index_sha256": _sha256_file(diagnostics_path),
-                "frame_count": len(index),
+                "frame_count": len(observed_index),
             }
             if complete != expected_complete:
-                errors.append("cache completion identity mismatch")
+                raise ValueError("cache completion identity mismatch")
         except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
             errors.append(f"invalid cache completion marker: {exc}")
-    return DynamicCacheValidation(not errors, tuple(errors), len(index))
+    return DynamicCacheValidation(
+        not errors,
+        tuple(errors),
+        len(observed_index),
+    )
 
 
 def _unknown_row(
@@ -781,7 +767,7 @@ def _unknown_row(
     local_id: int,
     label: str,
     probability: float,
-    reason: str,
+    reason_codes: list[str],
 ) -> dict[str, object]:
     return {
         "frame_id": frame_id,
@@ -796,13 +782,13 @@ def _unknown_row(
         "strong_dynamic": False,
         "observation_count": 0,
         "confirming_observations": 0,
-        "reason": reason,
+        "reason_codes": list(reason_codes),
     }
 
 
 def _score_probability(state: TrackState, config: DynamicConfirmationConfig) -> float:
     if state.strong_dynamic:
-        return state.dynamic_probability
+        return max(state.dynamic_probability, config.dynamic_enter_threshold)
     if (
         state.observation_count < config.min_confirming_observations
         or state.confirming_observations > 0

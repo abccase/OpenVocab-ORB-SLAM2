@@ -28,8 +28,8 @@ def test_crossing_image_masks_keep_3d_track_ids() -> None:
     assert result.unassigned_observations == ()
 
 
-def test_association_rejects_label_mismatch_and_out_of_gate() -> None:
-    # Catches labels/out-of-range candidates entering a one-to-one assignment.
+def test_association_penalizes_label_mismatch_but_only_gates_distance() -> None:
+    # Catches incorrectly treating exact-label similarity as a hard gate.
     result = associate_tracks(
         [track(1, "person", 0.0)],
         [
@@ -39,9 +39,38 @@ def test_association_rejects_label_mismatch_and_out_of_gate() -> None:
         DynamicConfirmationConfig.frozen(),
     )
 
-    assert result.assignments == {}
-    assert result.unassigned_tracks == (1,)
-    assert result.unassigned_observations == (0, 1)
+    assert result.assignments == {1: 0}
+    assert result.unassigned_tracks == ()
+    assert result.unassigned_observations == (1,)
+
+
+def test_exact_label_wins_when_label_penalty_outweighs_small_distance_advantage() -> None:
+    # Catches omitting the literal 0.15 mismatch term from the frozen cost.
+    mask = np.ones((1, 1), dtype=bool)
+    item = track(5, "person", 0.0)
+    item.last_mask = mask
+    result = associate_tracks(
+        [item],
+        [observation(0, "chair", 0.0, mask), observation(1, "person", 0.2, mask)],
+        DynamicConfirmationConfig.frozen(),
+    )
+
+    assert result.assignments == {5: 1}
+
+
+def test_three_frame_occlusion_reassociates_the_surviving_track_id() -> None:
+    # Catches dropping or replacing a track before its five-miss lifetime expires.
+    item = track(17, "person", 0.0)
+    for timestamp in (1.0, 2.0, 3.0):
+        item.mark_missed(timestamp)
+    result = associate_tracks(
+        [item],
+        [observation(0, "person", 0.1, np.ones((1, 1), dtype=bool))],
+        DynamicConfirmationConfig.frozen(),
+    )
+
+    assert item.terminated is False
+    assert result.assignments == {17: 0}
 
 
 def test_track_is_terminated_after_sixth_miss() -> None:

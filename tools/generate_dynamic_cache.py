@@ -100,6 +100,9 @@ def _build_formal_jobs(
                 run_root / "run_manifest.json",
                 _load_intrinsics(root / "Examples/RGB-D" / str(dataset["settings"])),
                 producer_commit=selected_producer,
+                dataset_manifest_path=(
+                    root / "data/tum/manifests" / f"{sequence_id}.json"
+                ),
             )
         )
     if selected and {job.sequence_id for job in jobs} != selected:

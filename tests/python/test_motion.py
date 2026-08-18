@@ -40,6 +40,7 @@ def test_frozen_dynamic_config_has_literal_reproducibility_parameters() -> None:
         "dynamic_evidence_increment": 0.35,
         "static_evidence_decrement": 0.20,
         "diagnostic_sample_limit": 512,
+        "diagnostic_fractions": [0.25, 0.50, 0.75],
     }
 
 
@@ -74,6 +75,23 @@ def test_track_initial_covariance_uses_the_bound_config() -> None:
     np.testing.assert_allclose(np.diag(item.covariance), [0.25, 0.25, 0.25, 2.0, 2.0, 2.0])
 
 
+def test_motion_evidence_compares_measurement_with_kalman_prediction() -> None:
+    # Catches using displacement from the last measurement instead of innovation.
+    cfg = DynamicConfirmationConfig.frozen()
+    item = DynamicTrack.new(18, "person", np.array([0.0, 0.0, 2.0]), timestamp=0.0)
+    item.state[3] = 1.0
+
+    state = item.update(
+        np.array([1.0, 0.0, 2.0]),
+        timestamp=1.0,
+        mad=np.zeros(3),
+        config=cfg,
+    )
+
+    assert state.confirming_observations == 0
+    assert state.dynamic_probability == 0.0
+
+
 def test_new_moving_track_waits_for_three_observations() -> None:
     # Catches strong filtering on a first or second displacement observation.
     cfg = DynamicConfirmationConfig.frozen()
@@ -92,14 +110,27 @@ def test_new_moving_track_waits_for_three_observations() -> None:
 def test_hysteresis_holds_then_exits_only_below_literal_exit_threshold() -> None:
     # Catches using one threshold for both entry and exit.
     cfg = DynamicConfirmationConfig.frozen()
-    item = DynamicTrack.new(10, "person", np.array([0.0, 0.0, 2.0]), timestamp=0.0)
-    for frame in range(1, 4):
-        state = item.update(np.array([0.20 * frame, 0.0, 2.0]), timestamp=float(frame), mad=np.zeros(3), config=cfg)
+    centroids = [np.array(value) for value in TRACK_FIXTURE["moving_world_centroids_m"]]
+    item = DynamicTrack.new(10, "person", centroids[0], timestamp=0.0)
+    for frame, centroid in enumerate(centroids[1:], 1):
+        state = item.update(
+            centroid,
+            timestamp=float(frame),
+            mad=np.zeros(3),
+            config=cfg,
+        )
     assert state.strong_dynamic is True
-    state = item.update(np.array([0.60, 0.0, 2.0]), timestamp=4.0, mad=np.zeros(3), config=cfg)
+    predicted = item.state[:3] + item.state[3:]
+    state = item.update(predicted, timestamp=4.0, mad=np.zeros(3), config=cfg)
     assert state.dynamic_probability == 0.80
     assert state.strong_dynamic is True
     for frame in range(5, 8):
-        state = item.update(np.array([0.60, 0.0, 2.0]), timestamp=float(frame), mad=np.zeros(3), config=cfg)
+        predicted = item.state[:3] + item.state[3:]
+        state = item.update(
+            predicted,
+            timestamp=float(frame),
+            mad=np.zeros(3),
+            config=cfg,
+        )
     assert state.dynamic_probability == 0.20
     assert state.strong_dynamic is False

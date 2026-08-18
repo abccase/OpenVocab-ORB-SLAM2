@@ -64,6 +64,7 @@ class DynamicConfirmationConfig:
     dynamic_evidence_increment: float
     static_evidence_decrement: float
     diagnostic_sample_limit: int
+    diagnostic_fractions: tuple[float, float, float]
 
     @classmethod
     def frozen(cls) -> "DynamicConfirmationConfig":
@@ -90,6 +91,7 @@ class DynamicConfirmationConfig:
             dynamic_evidence_increment=0.35,
             static_evidence_decrement=0.20,
             diagnostic_sample_limit=512,
+            diagnostic_fractions=(0.25, 0.50, 0.75),
         )
 
     def __post_init__(self) -> None:
@@ -113,6 +115,8 @@ class DynamicConfirmationConfig:
             self.centroid_3d_weight + self.mask_iou_weight + self.label_weight, 1.0, abs_tol=1e-12
         ):
             raise ValueError("association weights must sum to one")
+        if self.diagnostic_fractions != (0.25, 0.50, 0.75):
+            raise ValueError("diagnostic fractions must remain frozen at quartiles")
 
     def to_primitive(self) -> dict[str, object]:
         return {
@@ -138,6 +142,7 @@ class DynamicConfirmationConfig:
             "dynamic_evidence_increment": self.dynamic_evidence_increment,
             "static_evidence_decrement": self.static_evidence_decrement,
             "diagnostic_sample_limit": self.diagnostic_sample_limit,
+            "diagnostic_fractions": list(self.diagnostic_fractions),
         }
 
     def sha256(self) -> str:

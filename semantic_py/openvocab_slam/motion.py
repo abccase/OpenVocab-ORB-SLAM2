@@ -97,12 +97,7 @@ class DynamicTrack:
         ):
             raise ValueError("centroid and MAD must be finite 3-vectors")
         predicted = self._predict(timestamp, config)
-        # The last camera-compensated world measurement is the static-scene
-        # prediction used for motion evidence.  The Kalman prediction remains
-        # responsible for association, but must not turn a stopped object into
-        # continued positive evidence merely because its velocity estimate
-        # needs time to settle.
-        residual = float(np.linalg.norm(measurement - self.last_measurement))
+        residual = float(np.linalg.norm(measurement - predicted))
         threshold = max(
             config.base_motion_threshold_m,
             config.robust_sigma_multiplier * float(np.linalg.norm(uncertainty)),

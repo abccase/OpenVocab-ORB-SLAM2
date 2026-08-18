@@ -49,9 +49,9 @@ def associate_tracks(
         for observation_index, observation in enumerate(observations):
             centroid = np.asarray(observation.centroid_world, dtype=np.float64)
             distance = float(np.linalg.norm(track.predicted_position - centroid))
-            if track.label != observation.label or distance > config.association_gate_m:
+            if distance > config.association_gate_m:
                 continue
-            label_similarity = 1.0
+            label_similarity = float(track.label == observation.label)
             previous_mask = (
                 track.last_mask
                 if track.last_mask is not None

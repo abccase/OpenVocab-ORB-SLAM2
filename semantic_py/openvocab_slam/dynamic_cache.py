@@ -685,10 +685,10 @@ def validate_dynamic_cache(
             probability = float(row["score_map_probability"])
             if frame_id < 0 or frame_id >= expected.expected_frame_count:
                 raise ValueError("track row frame is outside coverage")
-            enter_threshold = float(expected.dynamic_config["dynamic_enter_threshold"])
+            exit_threshold = float(expected.dynamic_config["dynamic_exit_threshold"])
             if (
                 not 0.0 <= probability <= 1.0
-                or bool(row["strong_dynamic"]) and probability < enter_threshold
+                or bool(row["strong_dynamic"]) and probability < exit_threshold
             ):
                 raise ValueError("track row dynamic state is invalid")
         if observed_instances != set(expected_instances):

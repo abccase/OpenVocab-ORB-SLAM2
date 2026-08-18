@@ -371,6 +371,35 @@ def test_validator_rejects_duplicate_or_missing_instance_rows(
     assert any("instance identity" in error for error in validation.errors)
 
 
+@pytest.mark.parametrize(
+    ("probability", "expected_valid"),
+    [(0.40, True), (0.55, True), (0.399, False)],
+)
+def test_validator_uses_exit_threshold_for_strong_hysteresis_state(
+    tmp_path: Path,
+    probability: float,
+    expected_valid: bool,
+) -> None:
+    # Catches rejecting a previously entered strong track while it remains in the hysteresis band.
+    _, job = _prepare(tmp_path, depth_values=(1000, 2000, 4000, 7000))
+    generate_dynamic_cache(job)
+    tracks_path = job.cache_root / "dynamic_tracks.jsonl"
+    rows = _jsonl(tracks_path)
+    row = rows[-1]
+    assert row["strong_dynamic"] is True
+    row["dynamic_probability"] = probability
+    row["score_map_probability"] = probability
+    row["confirming_observations"] = 0
+    _write_jsonl(tracks_path, rows)
+    _refresh_complete_hashes(job.cache_root)
+
+    validation = validate_dynamic_cache(job.cache_root, job.manifest, job.dataset_root)
+
+    assert validation.valid is expected_valid
+    if not expected_valid:
+        assert any("dynamic state" in error for error in validation.errors)
+
+
 def test_diagnostic_overlays_are_predeclared_bound_and_validated(tmp_path: Path) -> None:
     # Catches outcome-selected diagnostics or unmanifested overlay output.
     _, job = _prepare(tmp_path)

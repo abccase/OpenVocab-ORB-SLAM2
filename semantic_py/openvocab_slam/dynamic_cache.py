@@ -307,7 +307,11 @@ def generate_dynamic_cache(job: DynamicCacheJob) -> DynamicCacheResult:
 
     complete_path = cache_root / "cache_complete.json"
     if complete_path.exists():
-        validation = validate_dynamic_cache(cache_root, job.manifest)
+        validation = validate_dynamic_cache(
+            cache_root,
+            job.manifest,
+            job.dataset_root,
+        )
         if not validation.valid:
             raise ValueError("existing complete dynamic cache is invalid: " + "; ".join(validation.errors))
         return _load_result(cache_root)
@@ -494,7 +498,7 @@ def generate_dynamic_cache(job: DynamicCacheJob) -> DynamicCacheResult:
         if diagnostic is not None:
             diagnostic_relative = Path(str(diagnostic["path"]))
             diagnostic_bytes = _render_diagnostic_overlay(
-                job.dataset_root / rgb_relative,
+                job.dataset_root / str(diagnostic["source_path"]),
                 score_map,
             )
             diagnostic_digest = hashlib.sha256(diagnostic_bytes).hexdigest()
@@ -519,7 +523,12 @@ def generate_dynamic_cache(job: DynamicCacheJob) -> DynamicCacheResult:
 
     _write_jsonl_atomic(cache_root / "dynamic_tracks.jsonl", track_rows)
     _write_jsonl_atomic(cache_root / "diagnostics_index.jsonl", diagnostic_index)
-    validation = validate_dynamic_cache(cache_root, job.manifest, require_complete=False)
+    validation = validate_dynamic_cache(
+        cache_root,
+        job.manifest,
+        job.dataset_root,
+        require_complete=False,
+    )
     if not validation.valid:
         raise ValueError("generated dynamic cache is invalid: " + "; ".join(validation.errors))
     _write_json_atomic(
@@ -535,7 +544,11 @@ def generate_dynamic_cache(job: DynamicCacheJob) -> DynamicCacheResult:
             "frame_count": validation.frame_count,
         },
     )
-    final_validation = validate_dynamic_cache(cache_root, job.manifest)
+    final_validation = validate_dynamic_cache(
+        cache_root,
+        job.manifest,
+        job.dataset_root,
+    )
     if not final_validation.valid:
         raise ValueError("completed dynamic cache is invalid: " + "; ".join(final_validation.errors))
     return DynamicCacheResult(
@@ -549,10 +562,12 @@ def generate_dynamic_cache(job: DynamicCacheJob) -> DynamicCacheResult:
 def validate_dynamic_cache(
     cache_root: Path,
     expected: DynamicCacheManifest,
+    dataset_root: Path,
     *,
     require_complete: bool = True,
 ) -> DynamicCacheValidation:
     root = Path(cache_root)
+    source_root = Path(dataset_root)
     errors: list[str] = []
     manifest_path = root / "cache_manifest.json"
     try:
@@ -588,6 +603,7 @@ def validate_dynamic_cache(
         return DynamicCacheValidation(False, tuple(errors + [f"invalid dynamic cache index: {exc}"]), 0)
     referenced: set[Path] = set()
     timestamps: set[float] = set()
+    score_maps: dict[int, np.ndarray] = {}
     for expected_frame_id, entry in enumerate(index):
         try:
             if set(entry) != {
@@ -626,6 +642,7 @@ def validate_dynamic_cache(
                 raise ValueError("score-map shape or dtype mismatch")
             if not np.all(np.isfinite(score_map)) or np.any(score_map < 0.0) or np.any(score_map > 1.0):
                 raise ValueError("score-map values are outside [0, 1]")
+            score_maps[expected_frame_id] = score_map
         except (OSError, ValueError, KeyError, TypeError) as exc:
             errors.append(f"invalid dynamic index entry {expected_frame_id}: {exc}")
     if len(index) != expected.expected_frame_count:
@@ -704,9 +721,29 @@ def validate_dynamic_cache(
             relative = Path(str(row["path"]))
             if relative.is_absolute() or ".." in relative.parts or relative.parent != Path("diagnostics"):
                 raise ValueError("unsafe diagnostic path")
+            source_relative = Path(str(declared["source_path"]))
+            if (
+                source_relative.is_absolute()
+                or ".." in source_relative.parts
+                or source_relative.parts[:1] != ("rgb",)
+            ):
+                raise ValueError("unsafe diagnostic source path")
+            source_path = source_root / source_relative
+            if _sha256_file(source_path) != declared["source_image_sha256"]:
+                raise ValueError("diagnostic source image hash mismatch")
+            expected_bytes = _render_diagnostic_overlay(
+                source_path,
+                score_maps[frame_id],
+            )
+            expected_sha256 = hashlib.sha256(expected_bytes).hexdigest()
+            if row["sha256"] != expected_sha256:
+                raise ValueError("diagnostic derived-content hash mismatch")
             path = root / relative
             referenced_diagnostics.add(path)
-            if _sha256_file(path) != row["sha256"]:
+            observed_bytes = path.read_bytes()
+            if observed_bytes != expected_bytes:
+                raise ValueError("diagnostic derived-content mismatch")
+            if hashlib.sha256(observed_bytes).hexdigest() != row["sha256"]:
                 raise ValueError("diagnostic hash mismatch")
             image = cv2.imread(str(path), cv2.IMREAD_COLOR)
             if image is None or image.shape[:2] != (int(row["height"]), int(row["width"])):
@@ -958,6 +995,7 @@ def _select_diagnostic_frames(
                 "frame_id": frame_id,
                 "timestamp": timestamps[frame_id],
                 "source_image_sha256": identity["source_image_sha256"],
+                "source_path": associations[frame_id][1].as_posix(),
                 "path": f"diagnostics/frame-{frame_id:06d}.png",
             }
         )

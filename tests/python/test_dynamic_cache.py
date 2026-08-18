@@ -210,7 +210,11 @@ def test_future_observation_cannot_change_prior_score_map_hashes(tmp_path: Path)
 
     assert [row["sha256"] for row in second.frame_index[:3]] == [row["sha256"] for row in first.frame_index[:3]]
     assert second.frame_index[3]["sha256"] != first.frame_index[3]["sha256"]
-    assert validate_dynamic_cache(first_job.cache_root, first_job.manifest).valid
+    assert validate_dynamic_cache(
+        first_job.cache_root,
+        first_job.manifest,
+        first_job.dataset_root,
+    ).valid
 
 
 def test_missing_exact_pose_produces_unknown_coverage(tmp_path: Path) -> None:
@@ -305,7 +309,7 @@ def test_resume_reuses_valid_atomic_outputs_and_moving_track_confirms(tmp_path: 
     assert not list(job.cache_root.rglob("*.partial"))
     final_score_map = np.load(job.cache_root / second.frame_index[-1]["path"], allow_pickle=False)
     assert np.all(final_score_map >= 0.70)
-    assert validate_dynamic_cache(job.cache_root, job.manifest).valid
+    assert validate_dynamic_cache(job.cache_root, job.manifest, job.dataset_root).valid
 
 
 def test_interrupted_prefix_orphan_and_partial_resume(tmp_path: Path) -> None:
@@ -327,7 +331,7 @@ def test_interrupted_prefix_orphan_and_partial_resume(tmp_path: Path) -> None:
 
     assert [row["sha256"] for row in resumed.frame_index] == original_hashes
     assert not list(job.cache_root.rglob("*.partial"))
-    assert validate_dynamic_cache(job.cache_root, job.manifest).valid
+    assert validate_dynamic_cache(job.cache_root, job.manifest, job.dataset_root).valid
 
 
 def test_validator_rejects_wrong_frame_and_semantic_identity(tmp_path: Path) -> None:
@@ -341,7 +345,7 @@ def test_validator_rejects_wrong_frame_and_semantic_identity(tmp_path: Path) -> 
     _write_jsonl(index_path, index)
     _refresh_complete_hashes(job.cache_root)
 
-    validation = validate_dynamic_cache(job.cache_root, job.manifest)
+    validation = validate_dynamic_cache(job.cache_root, job.manifest, job.dataset_root)
 
     assert validation.valid is False
     assert any("semantic identity" in error for error in validation.errors)
@@ -361,7 +365,7 @@ def test_validator_rejects_duplicate_or_missing_instance_rows(
     _write_jsonl(tracks_path, rows)
     _refresh_complete_hashes(job.cache_root)
 
-    validation = validate_dynamic_cache(job.cache_root, job.manifest)
+    validation = validate_dynamic_cache(job.cache_root, job.manifest, job.dataset_root)
 
     assert validation.valid is False
     assert any("instance identity" in error for error in validation.errors)
@@ -375,7 +379,7 @@ def test_diagnostic_overlays_are_predeclared_bound_and_validated(tmp_path: Path)
 
     assert [row["frame_id"] for row in result.diagnostic_index] == [1, 2, 3]
     assert all((job.cache_root / row["path"]).is_file() for row in result.diagnostic_index)
-    assert validate_dynamic_cache(job.cache_root, job.manifest).valid
+    assert validate_dynamic_cache(job.cache_root, job.manifest, job.dataset_root).valid
 
 
 @pytest.mark.parametrize("mutation", ["missing", "extra", "tampered"])
@@ -394,7 +398,34 @@ def test_validator_rejects_missing_extra_or_tampered_diagnostic_overlay(
     else:
         first_overlay.write_bytes(b"tampered diagnostic overlay")
 
-    validation = validate_dynamic_cache(job.cache_root, job.manifest)
+    validation = validate_dynamic_cache(job.cache_root, job.manifest, job.dataset_root)
+
+    assert validation.valid is False
+    assert any("diagnostic" in error for error in validation.errors)
+
+
+def test_validator_rejects_self_consistent_diagnostic_overlay_tamper(
+    tmp_path: Path,
+) -> None:
+    # Catches trusting output-controlled overlay/index/completion hashes as an integrity root.
+    _, job = _prepare(tmp_path)
+    result = generate_dynamic_cache(job)
+    diagnostics_path = job.cache_root / "diagnostics_index.jsonl"
+    diagnostic_rows = _jsonl(diagnostics_path)
+    target = job.cache_root / result.diagnostic_index[0]["path"]
+    ok, encoded = cv2.imencode(
+        ".png",
+        np.zeros((10, 10, 3), dtype=np.uint8),
+        [cv2.IMWRITE_PNG_COMPRESSION, 9],
+    )
+    assert ok
+    replacement = encoded.tobytes()
+    target.write_bytes(replacement)
+    diagnostic_rows[0]["sha256"] = hashlib.sha256(replacement).hexdigest()
+    _write_jsonl(diagnostics_path, diagnostic_rows)
+    _refresh_complete_hashes(job.cache_root)
+
+    validation = validate_dynamic_cache(job.cache_root, job.manifest, job.dataset_root)
 
     assert validation.valid is False
     assert any("diagnostic" in error for error in validation.errors)

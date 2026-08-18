@@ -6,6 +6,10 @@ import json
 import math
 
 
+FORMAL_BASELINE_COMPATIBILITY_COMMIT = "bd85add6b40e6fa719883e9eb87b38a3f15e7c6d"
+FORMAL_BASELINE_PRODUCER_COMMIT = "58014b7c1f2b73427b67b4e80a8cf334127f48ea"
+
+
 @dataclass(frozen=True)
 class InferenceConfig:
     schema: str

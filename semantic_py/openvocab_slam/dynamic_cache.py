@@ -16,7 +16,11 @@ import numpy as np
 
 from .association import AssociationObservation, associate_tracks
 from .cache import read_cache_frame, validate_cache
-from .config import DynamicConfirmationConfig
+from .config import (
+    DynamicConfirmationConfig,
+    FORMAL_BASELINE_COMPATIBILITY_COMMIT,
+    FORMAL_BASELINE_PRODUCER_COMMIT,
+)
 from .geometry import centroid_from_mask
 from .motion import DynamicTrack, TrackState
 from .schemas import CacheManifest, decode_binary_mask_rle
@@ -838,10 +842,10 @@ def _validate_bootstrap_manifest(
         raise ValueError("bootstrap run study mismatch")
     if manifest.get("mode") != "baseline":
         raise ValueError("bootstrap run mode mismatch")
-    for field in ("compatibility_commit", "producer_commit"):
-        value = str(manifest.get(field, ""))
-        if len(value) != 40 or any(character not in "0123456789abcdef" for character in value):
-            raise ValueError(f"bootstrap run {field} mismatch")
+    if manifest.get("compatibility_commit") != FORMAL_BASELINE_COMPATIBILITY_COMMIT:
+        raise ValueError("bootstrap run compatibility commit mismatch")
+    if manifest.get("producer_commit") != FORMAL_BASELINE_PRODUCER_COMMIT:
+        raise ValueError("bootstrap run producer commit mismatch")
     if manifest.get("exit_code") != 0 or manifest.get("invalid_reason") is not None:
         raise ValueError("bootstrap run completion identity mismatch")
     if manifest.get("sequence_id") != sequence_id:

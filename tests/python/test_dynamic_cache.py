@@ -161,8 +161,8 @@ def _prepare(
         "run_id": "oracle-tiny-seed-23011-attempt-001",
         "study": "oracle",
         "mode": "baseline",
-        "compatibility_commit": "9" * 40,
-        "producer_commit": "a" * 40,
+        "compatibility_commit": "bd85add6b40e6fa719883e9eb87b38a3f15e7c6d",
+        "producer_commit": "58014b7c1f2b73427b67b4e80a8cf334127f48ea",
         "state": "COMPLETED",
         "valid": True,
         "exit_code": 0,
@@ -282,6 +282,18 @@ def test_job_rejects_noncanonical_bootstrap_identity(
         _prepare(tmp_path, run_manifest_updates=updates)
 
 
+def test_job_rejects_wrong_baseline_compatibility_commit(tmp_path: Path) -> None:
+    # Catches accepting a commit-shaped value instead of the frozen baseline tag target.
+    with pytest.raises(ValueError, match="compatibility commit"):
+        _prepare(tmp_path, run_manifest_updates={"compatibility_commit": "0" * 40})
+
+
+def test_job_rejects_wrong_formal_baseline_producer_commit(tmp_path: Path) -> None:
+    # Catches accepting a commit-shaped value unrelated to canonical oracle artifacts.
+    with pytest.raises(ValueError, match="producer commit"):
+        _prepare(tmp_path, run_manifest_updates={"producer_commit": "1" * 40})
+
+
 def test_resume_reuses_valid_atomic_outputs_and_moving_track_confirms(tmp_path: Path) -> None:
     # Catches duplicate resume rows, stale partials, and score maps ignoring strong state.
     _, job = _prepare(tmp_path, depth_values=(1000, 2000, 4000, 7000))
@@ -364,6 +376,28 @@ def test_diagnostic_overlays_are_predeclared_bound_and_validated(tmp_path: Path)
     assert [row["frame_id"] for row in result.diagnostic_index] == [1, 2, 3]
     assert all((job.cache_root / row["path"]).is_file() for row in result.diagnostic_index)
     assert validate_dynamic_cache(job.cache_root, job.manifest).valid
+
+
+@pytest.mark.parametrize("mutation", ["missing", "extra", "tampered"])
+def test_validator_rejects_missing_extra_or_tampered_diagnostic_overlay(
+    tmp_path: Path,
+    mutation: str,
+) -> None:
+    # Catches checking only the diagnostic index rather than overlay set and bytes.
+    _, job = _prepare(tmp_path)
+    result = generate_dynamic_cache(job)
+    first_overlay = job.cache_root / result.diagnostic_index[0]["path"]
+    if mutation == "missing":
+        first_overlay.unlink()
+    elif mutation == "extra":
+        (first_overlay.parent / "extra.png").write_bytes(first_overlay.read_bytes())
+    else:
+        first_overlay.write_bytes(b"tampered diagnostic overlay")
+
+    validation = validate_dynamic_cache(job.cache_root, job.manifest)
+
+    assert validation.valid is False
+    assert any("diagnostic" in error for error in validation.errors)
 
 
 def test_confirmed_static_track_returns_to_low_score(tmp_path: Path) -> None:

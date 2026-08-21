@@ -3,6 +3,7 @@
 #include <cstdint>
 
 #include "semantic/FeatureMaskPolicy.h"
+#include "semantic/Telemetry.h"
 
 namespace {
 
@@ -21,6 +22,17 @@ TEST(FeatureMaskPolicy, AppliesFrozenThresholdBoundaries) {
     EXPECT_FALSE(decideFeature(0.70f, 10, 20, 99, config).keep);
     EXPECT_EQ(FeatureReason::HIGH_SCORE_REMOVE,
               decideFeature(0.71f, 10, 20, 99, config).reason);
+}
+
+TEST(PacingDecision, DeductsAllPostLoadProcessingAndReportsLateness) {
+    const ORB_SLAM2::semantic::PacingDecision early =
+        ORB_SLAM2::semantic::decidePacing(0.05, 0.02);
+    EXPECT_DOUBLE_EQ(early.sleep_seconds, 0.03);
+    EXPECT_DOUBLE_EQ(early.lateness_seconds, 0.0);
+    const ORB_SLAM2::semantic::PacingDecision late =
+        ORB_SLAM2::semantic::decidePacing(0.05, 0.08);
+    EXPECT_DOUBLE_EQ(late.sleep_seconds, 0.0);
+    EXPECT_DOUBLE_EQ(late.lateness_seconds, 0.03);
 }
 
 TEST(FeatureMaskPolicy, UncertainDecisionIsStableAndSequenceBound) {

@@ -52,6 +52,8 @@ Frame::Frame(const Frame &frame)
      mvScaleFactors(frame.mvScaleFactors), mvInvScaleFactors(frame.mvInvScaleFactors),
      mvLevelSigma2(frame.mvLevelSigma2), mvInvLevelSigma2(frame.mvInvLevelSigma2)
 {
+    if(frame.mDescriptors.empty() && frame.mDescriptors.cols>0)
+        mDescriptors = cv::Mat(0, frame.mDescriptors.cols, frame.mDescriptors.type());
     for(int i=0;i<FRAME_GRID_COLS;i++)
         for(int j=0; j<FRAME_GRID_ROWS; j++)
             mGrid[i][j]=frame.mGrid[i][j];
@@ -131,7 +133,9 @@ Frame::Frame(const cv::Mat &imGray, const cv::Mat &imDepth,
              const semantic::DynamicScoreMap* score_map,
              semantic::FrameTelemetry* telemetry)
     :mpORBvocabulary(voc),mpORBextractorLeft(extractor),mpORBextractorRight(static_cast<ORBextractor*>(NULL)),
-     mTimeStamp(timeStamp), mK(K.clone()),mDistCoef(distCoef.clone()), mbf(bf), mThDepth(thDepth)
+     mTimeStamp(timeStamp), mK(K.clone()),mDistCoef(distCoef.clone()), mbf(bf),
+     mb(bf/K.at<float>(0,0)), mThDepth(thDepth),
+     mpReferenceKF(static_cast<KeyFrame*>(NULL))
 {
     // Frame ID
     mnId=nNextId++;
@@ -171,7 +175,7 @@ Frame::Frame(const cv::Mat &imGray, const cv::Mat &imDepth,
                                                 score_map->policy_seed};
         std::vector<cv::KeyPoint> filtered_keys;
         filtered_keys.reserve(mvKeys.size());
-        cv::Mat filtered_descriptors;
+        cv::Mat filtered_descriptors(0, mDescriptors.cols, mDescriptors.type());
         std::size_t removed_dynamic = 0;
         std::size_t retained_uncertain = 0;
         std::size_t removed_uncertain = 0;
@@ -216,7 +220,14 @@ Frame::Frame(const cv::Mat &imGray, const cv::Mat &imDepth,
     N = mvKeys.size();
 
     if(mvKeys.empty())
+    {
+        mvKeysUn.clear();
+        mvuRight.clear();
+        mvDepth.clear();
+        mvpMapPoints.clear();
+        mvbOutlier.clear();
         return;
+    }
 
     UndistortKeyPoints();
 

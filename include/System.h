@@ -73,6 +73,9 @@ public:
     // Input depthmap: Float (CV_32F).
     // Returns the camera pose (empty if tracking fails).
     cv::Mat TrackRGBD(const cv::Mat &im, const cv::Mat &depthmap, const double &timestamp);
+    // Caller responsibility: before passing a non-null score map, bind its
+    // trusted cache manifest to the exact dataset manifest/source tree and
+    // association used for this RGB-D stream (the formal harness enforces it).
     cv::Mat TrackRGBD(const cv::Mat &im, const cv::Mat &depthmap,
                       const double &timestamp,
                       const semantic::DynamicScoreMap* score_map,

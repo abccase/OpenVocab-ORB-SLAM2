@@ -9,6 +9,8 @@ from pathlib import Path
 import numpy as np
 
 from tools.verify_baseline_equivalence import (
+    _validate_registered_pair,
+    _write_json_atomic,
     associate_timestamps,
     compute_ate_rmse,
     measure_run,
@@ -17,6 +19,80 @@ from tools.verify_baseline_equivalence import (
 
 
 class BaselineEquivalenceTests(unittest.TestCase):
+    def test_registered_pair_rejects_every_condition_identity_mismatch(self) -> None:
+        shared = {
+            "compatibility_commit": "a" * 40,
+            "vocabulary": {"sha256": "b" * 64},
+            "settings": {"sha256": "c" * 64},
+            "association_sha256": "d" * 64,
+            "dataset_manifest_sha256": "e" * 64,
+            "expected_frames": 3,
+        }
+        oracle = {**shared, "study": "oracle", "mode": "baseline",
+                  "sequence_id": "tiny", "seed": 23011,
+                  "producer_commit": "1" * 40}
+        candidate = {**shared, "study": "equivalence", "mode": "baseline",
+                     "sequence_id": "tiny", "seed": 23011,
+                     "producer_commit": "2" * 40, "cache_identity": None,
+                     "cache_root": None, "pacing": "dataset_timestamp_paced_relative",
+                     "verified_inputs": {"source_tree_sha256": "f" * 64},
+                     "registration_identity": {"experiment_manifest_sha256": "9" * 64}}
+        _validate_registered_pair(
+            oracle, candidate, sequence_id="tiny", seed=23011,
+            dataset_manifest_sha256="e" * 64, source_tree_sha256="f" * 64,
+            experiment_manifest_sha256="9" * 64)
+        mutations = [
+            ("sequence", "sequence_id", "other"),
+            ("seed", "seed", 23012),
+            ("study", "study", "smoke"),
+            ("mode", "mode", "semantic-feedback"),
+            ("compatibility", "compatibility_commit", "0" * 40),
+            ("vocabulary", "vocabulary", {"sha256": "0" * 64}),
+            ("settings", "settings", {"sha256": "0" * 64}),
+            ("association", "association_sha256", "0" * 64),
+            ("dataset", "dataset_manifest_sha256", "0" * 64),
+            ("cache", "cache_identity", {"manifest_sha256": "0" * 64}),
+            ("producer", "producer_commit", ""),
+            ("pacing", "pacing", "absolute-deadline"),
+        ]
+        for label, field, value in mutations:
+            with self.subTest(label=label):
+                broken = json.loads(json.dumps(candidate))
+                broken[field] = value
+                with self.assertRaises(ValueError):
+                    _validate_registered_pair(
+                        oracle, broken, sequence_id="tiny", seed=23011,
+                        dataset_manifest_sha256="e" * 64,
+                        source_tree_sha256="f" * 64,
+                        experiment_manifest_sha256="9" * 64)
+        for label, nested, value in (
+            ("source-tree", "source_tree_sha256", "0" * 64),
+        ):
+            with self.subTest(label=label):
+                broken = json.loads(json.dumps(candidate))
+                broken["verified_inputs"][nested] = value
+                with self.assertRaises(ValueError):
+                    _validate_registered_pair(
+                        oracle, broken, sequence_id="tiny", seed=23011,
+                        dataset_manifest_sha256="e" * 64,
+                        source_tree_sha256="f" * 64,
+                        experiment_manifest_sha256="9" * 64)
+        broken = json.loads(json.dumps(candidate))
+        broken["registration_identity"]["experiment_manifest_sha256"] = "0" * 64
+        with self.assertRaises(ValueError):
+            _validate_registered_pair(
+                oracle, broken, sequence_id="tiny", seed=23011,
+                dataset_manifest_sha256="e" * 64, source_tree_sha256="f" * 64,
+                experiment_manifest_sha256="9" * 64)
+
+    def test_atomic_report_writer_publishes_complete_json(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "report.json"
+            _write_json_atomic(path, {"tool_sha256": "a" * 64,
+                                      "numpy_version": np.__version__,
+                                      "parameters": {"ate_tolerance_floor_m": 1e-4}})
+            self.assertEqual(json.loads(path.read_text())["numpy_version"], np.__version__)
+            self.assertFalse((path.parent / f".{path.name}.partial").exists())
     def test_run_measurement_rejects_artifact_changed_after_manifest(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

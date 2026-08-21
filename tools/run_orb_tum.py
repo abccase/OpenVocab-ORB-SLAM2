@@ -24,6 +24,9 @@ class RunCondition:
     sequence_root: Path
     settings: Path
     dataset_manifest: Path | None = None
+    experiment_manifest: Path | None = None
+    semantic_manifest: Path | None = None
+    prompt_config: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -104,6 +107,26 @@ def _association_count(path: Path) -> int:
     return count
 
 
+def _association_timestamps(path: Path) -> list[str]:
+    timestamps: list[str] = []
+    previous = -math.inf
+    for line_number, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        fields = line.split()
+        if len(fields) != 4:
+            raise ValueError(f"{path}:{line_number}: association row must have four fields")
+        value = float(fields[0])
+        if not math.isfinite(value) or value <= previous:
+            raise ValueError(f"{path}:{line_number}: invalid association timestamp")
+        previous = value
+        timestamps.append(fields[0])
+    if not timestamps:
+        raise ValueError(f"association file has no rows: {path}")
+    return timestamps
+
+
 def _validate_telemetry(path: Path, expected_frames: int) -> int:
     rows = []
     for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
@@ -130,11 +153,22 @@ _OV_TELEMETRY_FIELDS = [
     "tracking_time_seconds", "raw_keypoints", "used_keypoints",
     "removed_dynamic", "retained_uncertain", "removed_uncertain",
     "semantic_accessed", "semantic_state", "cache_load_seconds",
-    "policy_seconds",
+    "policy_seconds", "pacing_lateness_seconds",
 ]
 
 
-def _validate_ov_telemetry(path: Path, expected_frames: int, mode: str) -> int:
+def _canonical_int(value: str, label: str) -> int:
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise ValueError(f"invalid integer {label}") from exc
+    if str(parsed) != value:
+        raise ValueError(f"non-canonical integer {label}")
+    return parsed
+
+
+def _validate_ov_telemetry(path: Path, expected_frames: int, mode: str,
+                           expected_timestamps: Sequence[str]) -> int:
     with path.open("r", encoding="utf-8", newline="") as stream:
         reader = csv.DictReader(stream)
         if reader.fieldnames != _OV_TELEMETRY_FIELDS:
@@ -143,16 +177,25 @@ def _validate_ov_telemetry(path: Path, expected_frames: int, mode: str) -> int:
     if len(rows) != expected_frames:
         raise ValueError(f"telemetry coverage mismatch: {len(rows)} != {expected_frames}")
     for index, row in enumerate(rows):
-        if int(row["frame_index"]) != index:
+        if _canonical_int(row["frame_index"], "frame_index") != index:
             raise ValueError(f"{path}: non-contiguous frame index")
+        if row["tracking_state"] not in {"-1", "0", "1", "2", "3"}:
+            raise ValueError(f"{path}: invalid tracking state")
+        if row["pose_valid"] not in {"0", "1"}:
+            raise ValueError(f"{path}: invalid pose-valid flag")
+        if float(row["timestamp"]) != float(expected_timestamps[index]):
+            raise ValueError(f"{path}: timestamp differs from association")
         numeric = [
             float(row["timestamp"]), float(row["tracking_time_seconds"]),
             float(row["cache_load_seconds"]), float(row["policy_seconds"]),
+            float(row["pacing_lateness_seconds"]),
         ]
         counts = [
-            int(row["raw_keypoints"]), int(row["used_keypoints"]),
-            int(row["removed_dynamic"]), int(row["retained_uncertain"]),
-            int(row["removed_uncertain"]),
+            _canonical_int(row["raw_keypoints"], "raw_keypoints"),
+            _canonical_int(row["used_keypoints"], "used_keypoints"),
+            _canonical_int(row["removed_dynamic"], "removed_dynamic"),
+            _canonical_int(row["retained_uncertain"], "retained_uncertain"),
+            _canonical_int(row["removed_uncertain"], "removed_uncertain"),
         ]
         if not all(math.isfinite(value) and value >= 0 for value in numeric[1:]):
             raise ValueError(f"{path}: invalid timing value")
@@ -160,11 +203,16 @@ def _validate_ov_telemetry(path: Path, expected_frames: int, mode: str) -> int:
             raise ValueError(f"{path}: invalid telemetry value")
         if counts[1] + counts[2] + counts[4] != counts[0]:
             raise ValueError(f"{path}: feature accounting invariant failed")
+        if counts[3] > counts[1]:
+            raise ValueError(f"{path}: retained uncertain exceeds used keypoints")
+        if row["semantic_accessed"] not in {"0", "1"}:
+            raise ValueError(f"{path}: invalid semantic-access flag")
         semantic_accessed = int(row["semantic_accessed"])
         if mode == "baseline":
             if (semantic_accessed != 0 or row["semantic_state"] != "BASELINE" or
                     counts[0] != counts[1] or counts[2] != 0 or
-                    counts[3] != 0 or counts[4] != 0):
+                    counts[3] != 0 or counts[4] != 0 or
+                    numeric[2] != 0.0 or numeric[3] != 0.0):
                 raise ValueError(f"{path}: baseline accessed semantic state")
         elif semantic_accessed != 1 or row["semantic_state"] != "CACHE_VALID":
             raise ValueError(f"{path}: semantic-feedback frame lacks valid cache state")
@@ -176,6 +224,128 @@ def _artifact(path: Path, *, pose_count: int | None = None) -> dict[str, object]
     if pose_count is not None:
         value["pose_count"] = pose_count
     return value
+
+
+def _read_json_object(path: Path, label: str) -> dict[str, object]:
+    try:
+        value = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"invalid {label}: {path}") from exc
+    if not isinstance(value, dict):
+        raise ValueError(f"invalid {label}: {path}")
+    return value
+
+
+def _formal_prompt_sha256(path: Path) -> str:
+    prompt_file = _read_json_object(path, "prompt config")
+    raw = prompt_file.get("frozen_formal_prompt")
+    if not isinstance(raw, str):
+        raise ValueError("prompt config lacks frozen_formal_prompt")
+    terms: list[str] = []
+    for part in raw.replace("\n", " ").split("."):
+        term = " ".join(part.strip().lower().split())
+        if term and term not in terms:
+            terms.append(term)
+    if not terms:
+        raise ValueError("formal prompt has no terms")
+    normalized = " . ".join(terms) + " ."
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
+def _verified_inputs(condition: RunCondition, association: Path,
+                     expected_frames: int, mode: str,
+                     cache_root: Path | None,
+                     cache_identity: dict[str, str] | None) -> dict[str, object]:
+    association_sha = _sha256_file(association)
+    if condition.dataset_manifest is None:
+        if mode == "semantic-feedback":
+            raise ValueError("semantic-feedback requires a dataset manifest")
+        return {
+            "dataset_manifest_sha256": None, "source_tree_sha256": None,
+            "dynamic_manifest_sha256": None, "dynamic_config_sha256": None,
+            "semantic_manifest_sha256": None, "semantic_identity_sha256": None,
+            "inference_config_sha256": None, "prompt_sha256": None,
+            "protocol": None,
+        }
+    dataset_path = Path(condition.dataset_manifest).resolve()
+    dataset = _read_json_object(dataset_path, "dataset manifest")
+    source_tree = dataset.get("extracted_tree_sha256")
+    if (dataset.get("schema_version") != 1 or
+            dataset.get("sequence_id") != condition.sequence_id or
+            dataset.get("association_sha256") != association_sha or
+            not _is_sha256(source_tree)):
+        raise ValueError("dataset manifest identity does not match current sequence")
+    result: dict[str, object] = {
+        "dataset_manifest_sha256": _sha256_file(dataset_path),
+        "source_tree_sha256": source_tree,
+        "dynamic_manifest_sha256": None, "dynamic_config_sha256": None,
+        "semantic_manifest_sha256": None, "semantic_identity_sha256": None,
+        "inference_config_sha256": None, "prompt_sha256": None,
+        "protocol": None,
+    }
+    experiment_study: object = None
+    if condition.experiment_manifest is not None:
+        experiment = _read_json_object(
+            Path(condition.experiment_manifest).resolve(), "experiment manifest")
+        experiment_study = experiment.get("study_id")
+        if experiment_study != "ovorb2_tum_v1":
+            raise ValueError("experiment manifest study identity mismatch")
+    if mode == "baseline":
+        return result
+    if cache_root is None or cache_identity is None:
+        raise ValueError("semantic cache registration is missing")
+    manifest_path = cache_root / "cache_manifest.json"
+    completion_path = cache_root / "cache_complete.json"
+    index_path = cache_root / "cache_index.jsonl"
+    for key, path in (("manifest_sha256", manifest_path),
+                      ("completion_sha256", completion_path),
+                      ("index_sha256", index_path)):
+        if _sha256_file(path) != cache_identity[key]:
+            raise ValueError(f"trusted dynamic cache {key} mismatch")
+    dynamic = _read_json_object(manifest_path, "dynamic cache manifest")
+    completion = _read_json_object(completion_path, "dynamic cache completion")
+    if (dynamic.get("schema") != "ovorb.dynamic-cache.v1" or
+            dynamic.get("sequence_id") != condition.sequence_id or
+            dynamic.get("expected_frame_count") != expected_frames or
+            dynamic.get("association_sha256") != association_sha or
+            dynamic.get("dataset_manifest_sha256") != result["dataset_manifest_sha256"] or
+            dynamic.get("source_tree_sha256") != source_tree or
+            dynamic.get("study_id") != experiment_study):
+        raise ValueError("dynamic cache manifest is not bound to current dataset manifest")
+    if (completion.get("manifest_sha256") != cache_identity["manifest_sha256"] or
+            completion.get("index_sha256") != cache_identity["index_sha256"] or
+            completion.get("frame_count") != expected_frames):
+        raise ValueError("dynamic cache completion identity mismatch")
+    if condition.semantic_manifest is None or condition.prompt_config is None:
+        raise ValueError("semantic-feedback requires semantic manifest and prompt config")
+    semantic_path = Path(condition.semantic_manifest).resolve()
+    prompt_path = Path(condition.prompt_config).resolve()
+    semantic = _read_json_object(semantic_path, "semantic cache manifest")
+    semantic_sha = _sha256_file(semantic_path)
+    prompt_file_sha = _sha256_file(prompt_path)
+    prompt_sha = _formal_prompt_sha256(prompt_path)
+    if (dynamic.get("semantic_manifest_sha256") != semantic_sha or
+            semantic.get("schema") != "ovorb.semantic-cache.v1" or
+            semantic.get("sequence_id") != condition.sequence_id or
+            semantic.get("source_tree_sha256") != source_tree or
+            semantic.get("association_sha256") != association_sha or
+            semantic.get("prompt_sha256") != prompt_sha or
+            semantic.get("study_id") != dynamic.get("study_id")):
+        raise ValueError("semantic manifest is not bound to current dataset/cache inputs")
+    result.update({
+        "dynamic_manifest_sha256": cache_identity["manifest_sha256"],
+        "dynamic_completion_sha256": cache_identity["completion_sha256"],
+        "dynamic_index_sha256": cache_identity["index_sha256"],
+        "dynamic_config_sha256": dynamic.get("dynamic_config_sha256"),
+        "semantic_manifest_sha256": semantic_sha,
+        "semantic_identity_sha256": dynamic.get("semantic_identity_sha256"),
+        "inference_config_sha256": semantic.get("inference_config_sha256"),
+        "prompt_sha256": prompt_sha,
+        "prompt_config_sha256": prompt_file_sha,
+        "protocol": {"dynamic": dynamic.get("schema"),
+                     "semantic": semantic.get("schema")},
+    })
+    return result
 
 
 def _completed_attempt(
@@ -328,12 +498,9 @@ def run_baseline_condition(
 def _completed_ov_attempt(
     attempt: Path,
     *,
-    mode: str,
-    compatibility_commit: str,
-    producer_commit: str,
-    executable_sha256: str,
+    registration_identity: dict[str, object],
     expected_frames: int,
-    cache_identity: dict[str, str] | None,
+    expected_timestamps: Sequence[str],
 ) -> RunResult | None:
     manifest_path = attempt / "run_manifest.json"
     if not manifest_path.is_file():
@@ -341,24 +508,28 @@ def _completed_ov_attempt(
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         if (manifest.get("state") != "COMPLETED" or manifest.get("valid") is not True or
-                manifest.get("mode") != mode or
-                manifest.get("compatibility_commit") != compatibility_commit or
-                manifest.get("producer_commit") != producer_commit or
-                manifest.get("executable", {}).get("sha256") != executable_sha256 or
-                manifest.get("cache_identity") != cache_identity):
+                manifest.get("registration_identity") != registration_identity):
             return None
+        mode = str(registration_identity["mode"])
         trajectory_path = attempt / "CameraTrajectory.txt"
         keyframe_path = attempt / "KeyFrameTrajectory.txt"
         telemetry_path = attempt / "frame_telemetry.csv"
         parse_trajectory(trajectory_path)
         parse_trajectory(keyframe_path)
-        frame_count = _validate_ov_telemetry(telemetry_path, expected_frames, mode)
+        frame_count = _validate_ov_telemetry(
+            telemetry_path, expected_frames, mode, expected_timestamps)
         final_state = json.loads((attempt / "final_state.json").read_text(encoding="utf-8"))
         timings = json.loads((attempt / "timings.json").read_text(encoding="utf-8"))
         if (final_state.get("state") != "COMPLETED" or final_state.get("mode") != mode or
                 int(final_state.get("frame_count", -1)) != expected_frames or
                 int(timings.get("frame_count", -1)) != expected_frames):
             return None
+        for name in ("mean_tracking_seconds", "median_tracking_seconds",
+                     "mean_pacing_lateness_seconds", "max_pacing_lateness_seconds",
+                     "wall_seconds"):
+            value = float(timings[name])
+            if not math.isfinite(value) or value < 0.0:
+                return None
         for key, path in (("trajectory", trajectory_path),
                           ("keyframe_trajectory", keyframe_path),
                           ("telemetry", telemetry_path),
@@ -404,18 +575,55 @@ def run_ov_condition(
 
     sequence_root = Path(condition.sequence_root).resolve()
     association = sequence_root / "associate.txt"
-    expected_frames = _association_count(association)
+    timestamp_lexemes = _association_timestamps(association)
+    expected_frames = len(timestamp_lexemes)
     executable = Path(executable).resolve()
     vocabulary = Path(vocabulary).resolve()
     settings = Path(condition.settings).resolve()
     executable_sha256 = _sha256_file(executable)
+    resolved_cache_root = Path(cache_root).resolve() if cache_root is not None else None
+    verified_inputs = _verified_inputs(
+        condition, association, expected_frames, mode, resolved_cache_root,
+        cache_identity)
+    command = [
+        str(executable), str(vocabulary), str(settings), str(sequence_root),
+        str(association), mode, condition.sequence_id, str(condition.seed),
+    ]
+    if mode == "semantic-feedback":
+        assert resolved_cache_root is not None and cache_identity is not None
+        command.extend([
+            str(resolved_cache_root), cache_identity["manifest_sha256"],
+            cache_identity["completion_sha256"], cache_identity["index_sha256"],
+        ])
+    dataset_manifest_sha = (_sha256_file(condition.dataset_manifest)
+                            if condition.dataset_manifest else None)
+    experiment_manifest_sha = (_sha256_file(condition.experiment_manifest)
+                               if condition.experiment_manifest else None)
+    registration_identity: dict[str, object] = {
+        "study": study, "mode": mode, "sequence_id": condition.sequence_id,
+        "seed": condition.seed, "compatibility_commit": compatibility_commit,
+        "producer_commit": producer_commit,
+        "executable": {"path": str(executable), "sha256": executable_sha256},
+        "vocabulary": {"path": str(vocabulary), "sha256": _sha256_file(vocabulary)},
+        "settings": {"path": str(settings), "sha256": _sha256_file(settings)},
+        "association": {"path": str(association), "sha256": _sha256_file(association)},
+        "dataset": {"root": str(sequence_root), "manifest_sha256": dataset_manifest_sha},
+        "source_tree_sha256": verified_inputs["source_tree_sha256"],
+        "experiment_manifest_sha256": experiment_manifest_sha,
+        "prompt_sha256": verified_inputs["prompt_sha256"],
+        "verified_inputs": verified_inputs,
+        "command": command,
+        "cache_root": str(resolved_cache_root) if resolved_cache_root else None,
+        "cache_identity": cache_identity,
+        "expected_frames": expected_frames,
+        "pacing": "dataset_timestamp_paced_relative",
+    }
     condition_root = Path(output_root) / condition.sequence_id / f"seed-{condition.seed}"
     attempts = sorted(condition_root.glob("attempt-*")) if condition_root.is_dir() else []
     for attempt in attempts:
         completed_attempt = _completed_ov_attempt(
-            attempt, mode=mode, compatibility_commit=compatibility_commit,
-            producer_commit=producer_commit, executable_sha256=executable_sha256,
-            expected_frames=expected_frames, cache_identity=cache_identity,
+            attempt, registration_identity=registration_identity,
+            expected_frames=expected_frames, expected_timestamps=timestamp_lexemes,
         )
         if completed_attempt is not None:
             return completed_attempt
@@ -423,18 +631,6 @@ def run_ov_condition(
     attempt_number = len(attempts) + 1
     run_dir = condition_root / f"attempt-{attempt_number:03d}"
     run_dir.mkdir(parents=True, exist_ok=False)
-    command = [
-        str(executable), str(vocabulary), str(settings), str(sequence_root),
-        str(association), mode, condition.sequence_id, str(condition.seed),
-    ]
-    resolved_cache_root: Path | None = None
-    if mode == "semantic-feedback":
-        assert cache_root is not None and cache_identity is not None
-        resolved_cache_root = Path(cache_root).resolve()
-        command.extend([
-            str(resolved_cache_root), cache_identity["manifest_sha256"],
-            cache_identity["completion_sha256"], cache_identity["index_sha256"],
-        ])
     run_id = f"{study}-{mode}-{condition.sequence_id}-seed-{condition.seed}-attempt-{attempt_number:03d}"
     base_manifest: dict[str, object] = {
         "schema_version": 2,
@@ -455,6 +651,9 @@ def run_ov_condition(
         "dataset_manifest_sha256": _sha256_file(condition.dataset_manifest) if condition.dataset_manifest else None,
         "cache_root": str(resolved_cache_root) if resolved_cache_root else None,
         "cache_identity": cache_identity,
+        "registration_identity": registration_identity,
+        "verified_inputs": verified_inputs,
+        "pacing": "dataset_timestamp_paced_relative",
         "start_time_utc": _utc_now(),
         "state": "REGISTERED",
         "valid": False,
@@ -472,29 +671,45 @@ def run_ov_condition(
     environment = os.environ.copy()
     environment["ORB_SLAM2_RUN_SEED"] = str(condition.seed)
     monotonic_start = time.monotonic()
+    launch_error: OSError | None = None
+    completed: subprocess.CompletedProcess[bytes] | None = None
     with (run_dir / "stdout.log").open("w", encoding="utf-8") as stdout, \
             (run_dir / "stderr.log").open("w", encoding="utf-8") as stderr:
-        completed = subprocess.run(command, cwd=run_dir, env=environment,
-                                   stdout=stdout, stderr=stderr, check=False)
+        try:
+            completed = subprocess.run(command, cwd=run_dir, env=environment,
+                                       stdout=stdout, stderr=stderr, check=False)
+        except OSError as exc:
+            launch_error = exc
     wall_seconds = time.monotonic() - monotonic_start
     invalid_reason: str | None = None
     trajectory_rows: list[tuple[float, ...]] = []
     keyframe_rows: list[tuple[float, ...]] = []
     frame_count = 0
-    if completed.returncode != 0:
+    if launch_error is not None:
+        invalid_reason = f"launch failed: {launch_error}"
+    elif completed is None:
+        invalid_reason = "launch failed: subprocess returned no result"
+    elif completed.returncode != 0:
         invalid_reason = f"process exited {completed.returncode}"
     else:
         try:
             trajectory_rows = parse_trajectory(run_dir / "CameraTrajectory.txt")
             keyframe_rows = parse_trajectory(run_dir / "KeyFrameTrajectory.txt")
             frame_count = _validate_ov_telemetry(
-                run_dir / "frame_telemetry.csv", expected_frames, mode)
+                run_dir / "frame_telemetry.csv", expected_frames, mode,
+                timestamp_lexemes)
             final_state = json.loads((run_dir / "final_state.json").read_text(encoding="utf-8"))
             timings = json.loads((run_dir / "timings.json").read_text(encoding="utf-8"))
             if (final_state.get("state") != "COMPLETED" or final_state.get("mode") != mode or
                     int(final_state.get("frame_count", -1)) != expected_frames or
                     int(timings.get("frame_count", -1)) != expected_frames):
                 raise ValueError("executable final state or timings are incomplete")
+            for name in ("mean_tracking_seconds", "median_tracking_seconds",
+                         "mean_pacing_lateness_seconds", "max_pacing_lateness_seconds",
+                         "wall_seconds"):
+                value = float(timings[name])
+                if not math.isfinite(value) or value < 0.0:
+                    raise ValueError(f"invalid executable timing aggregate: {name}")
         except (OSError, TypeError, ValueError, json.JSONDecodeError) as exc:
             invalid_reason = str(exc)
     valid = invalid_reason is None
@@ -503,7 +718,7 @@ def run_ov_condition(
         "state": "COMPLETED" if valid else "FAILED",
         "valid": valid,
         "end_time_utc": _utc_now(),
-        "exit_code": completed.returncode,
+        "exit_code": completed.returncode if completed is not None else None,
         "wall_time_seconds": wall_seconds,
         "invalid_reason": invalid_reason,
     }
@@ -529,7 +744,7 @@ def _git_output(root: Path, *args: str) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--mode", choices=("baseline", "baseline-equivalence", "semantic-feedback"), required=True)
+    parser.add_argument("--mode", choices=("baseline", "semantic-feedback"), required=True)
     parser.add_argument("--study", choices=("smoke", "oracle", "equivalence"), required=True)
     parser.add_argument("--sequence")
     parser.add_argument("--all-sequences", action="store_true")
@@ -543,6 +758,8 @@ def main() -> int:
     parser.add_argument("--executable", type=Path)
     parser.add_argument("--vocabulary", type=Path, default=Path("Vocabulary/ORBvoc.txt"))
     parser.add_argument("--dynamic-cache-root", type=Path, default=Path("cache/dynamic/v1"))
+    parser.add_argument("--semantic-cache-root", type=Path, default=Path("cache/semantic/v1"))
+    parser.add_argument("--prompt-config", type=Path, default=Path("config/PROMPTS.yaml"))
     parser.add_argument("--dynamic-cache-identities", type=Path,
                         default=Path("config/DYNAMIC_CACHE_IDENTITY.json"))
     args = parser.parse_args()
@@ -557,10 +774,8 @@ def main() -> int:
         parser.error("select --seed or use --all-seeds")
     compatibility_commit = _git_output(root, "rev-parse", "baseline/ubuntu22^{}")
     producer_commit = _git_output(root, "rev-parse", "HEAD")
-    use_ov_runner = args.mode in {"baseline-equivalence", "semantic-feedback"} or args.study == "equivalence"
-    effective_mode = "baseline" if args.mode in {"baseline", "baseline-equivalence"} else args.mode
-    if args.mode == "baseline-equivalence" and args.study != "equivalence":
-        parser.error("--mode baseline-equivalence requires --study equivalence")
+    use_ov_runner = args.mode == "semantic-feedback" or args.study == "equivalence"
+    effective_mode = args.mode
     if args.study == "oracle" and effective_mode != "baseline":
         parser.error("oracle study is baseline-only")
     executable = args.executable or Path(
@@ -583,9 +798,16 @@ def main() -> int:
             sequence_root,
             Path("Examples/RGB-D") / item["settings"],
             args.data_manifests / f"{item['id']}.json",
+            args.manifest,
+            args.semantic_cache_root / item["id"] / "cache_manifest.json",
+            args.prompt_config,
         )
         for seed in seeds:
-            condition = RunCondition(condition.sequence_id, int(seed), condition.sequence_root, condition.settings, condition.dataset_manifest)
+            condition = RunCondition(
+                condition.sequence_id, int(seed), condition.sequence_root,
+                condition.settings, condition.dataset_manifest,
+                condition.experiment_manifest, condition.semantic_manifest,
+                condition.prompt_config)
             if use_ov_runner:
                 identity = None
                 cache_root = None

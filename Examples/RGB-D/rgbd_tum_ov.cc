@@ -104,18 +104,28 @@ vector<AssociatedFrame> LoadAssociations(const string& path) {
     return frames;
 }
 
-void WriteTimings(const vector<double>& tracking, double wall_seconds) {
+void WriteTimings(const vector<double>& tracking, const vector<double>& lateness,
+                  double wall_seconds) {
     vector<double> sorted = tracking;
     std::sort(sorted.begin(), sorted.end());
     double sum = 0.0;
     for (std::size_t i = 0; i < tracking.size(); ++i) sum += tracking[i];
     const double mean = tracking.empty() ? 0.0 : sum / tracking.size();
     const double median = sorted.empty() ? 0.0 : sorted[sorted.size() / 2];
+    double lateness_sum = 0.0;
+    double lateness_max = 0.0;
+    for (std::size_t i = 0; i < lateness.size(); ++i) {
+        lateness_sum += lateness[i];
+        lateness_max = std::max(lateness_max, lateness[i]);
+    }
+    const double lateness_mean = lateness.empty() ? 0.0 : lateness_sum / lateness.size();
     std::ostringstream json;
     json << std::setprecision(15)
          << "{\n  \"frame_count\": " << tracking.size()
          << ",\n  \"mean_tracking_seconds\": " << mean
          << ",\n  \"median_tracking_seconds\": " << median
+         << ",\n  \"mean_pacing_lateness_seconds\": " << lateness_mean
+         << ",\n  \"max_pacing_lateness_seconds\": " << lateness_max
          << ",\n  \"wall_seconds\": " << wall_seconds << "\n}\n";
     WriteAtomic("timings.json", json.str());
 }
@@ -163,6 +173,8 @@ int main(int argc, char** argv) {
         ORB_SLAM2::System slam(argv[1], argv[2], ORB_SLAM2::System::RGBD, true);
         vector<double> tracking_times;
         tracking_times.reserve(frames.size());
+        vector<double> pacing_lateness;
+        pacing_lateness.reserve(frames.size());
         const std::chrono::steady_clock::time_point run_start =
             std::chrono::steady_clock::now();
         string failure;
@@ -177,6 +189,8 @@ int main(int argc, char** argv) {
                 failure = "RGB or depth image is missing at frame " + std::to_string(i);
                 break;
             }
+            const std::chrono::steady_clock::time_point pace_start =
+                std::chrono::steady_clock::now();
 
             ORB_SLAM2::semantic::DynamicScoreMap score_map;
             const ORB_SLAM2::semantic::DynamicScoreMap* score_pointer = NULL;
@@ -206,6 +220,16 @@ int main(int argc, char** argv) {
                 std::chrono::duration_cast<std::chrono::duration<double> >(
                     std::chrono::steady_clock::now() - track_start).count();
             frame_telemetry.cache_load_seconds = cache_seconds;
+            double interval = 0.0;
+            if (i + 1 < frames.size()) interval = frames[i + 1].timestamp - frame.timestamp;
+            else if (i > 0) interval = frame.timestamp - frames[i - 1].timestamp;
+            const double semantic_processing_seconds =
+                std::chrono::duration_cast<std::chrono::duration<double> >(
+                    std::chrono::steady_clock::now() - pace_start).count();
+            const ORB_SLAM2::semantic::PacingDecision pacing =
+                ORB_SLAM2::semantic::decidePacing(
+                    interval, semantic ? semantic_processing_seconds : tracking_seconds);
+            frame_telemetry.pacing_lateness_seconds = pacing.lateness_seconds;
             telemetry << ORB_SLAM2::semantic::formatTelemetryCsv(
                 i, frame.timestamp, slam.GetTrackingState(), !pose.empty(),
                 tracking_seconds, frame_telemetry) << '\n';
@@ -215,20 +239,17 @@ int main(int argc, char** argv) {
                 break;
             }
             tracking_times.push_back(tracking_seconds);
+            pacing_lateness.push_back(pacing.lateness_seconds);
             ++completed_frames;
-
-            double interval = 0.0;
-            if (i + 1 < frames.size()) interval = frames[i + 1].timestamp - frame.timestamp;
-            else if (i > 0) interval = frame.timestamp - frames[i - 1].timestamp;
-            if (tracking_seconds < interval)
-                usleep(static_cast<useconds_t>((interval - tracking_seconds) * 1e6));
+            if (pacing.sleep_seconds > 0.0)
+                usleep(static_cast<useconds_t>(pacing.sleep_seconds * 1e6));
         }
 
         slam.Shutdown();
         const double wall_seconds =
             std::chrono::duration_cast<std::chrono::duration<double> >(
                 std::chrono::steady_clock::now() - run_start).count();
-        WriteTimings(tracking_times, wall_seconds);
+        WriteTimings(tracking_times, pacing_lateness, wall_seconds);
         if (!failure.empty()) {
             WriteFinalState("FAILED", mode, completed_frames, failure);
             std::cerr << failure << '\n';

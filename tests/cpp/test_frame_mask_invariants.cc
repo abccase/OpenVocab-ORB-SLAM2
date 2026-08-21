@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <opencv2/core.hpp>
+#include <cmath>
 
 #include "Frame.h"
 #include "ORBextractor.h"
@@ -17,6 +18,13 @@ cv::Mat Checkerboard() {
     return image;
 }
 
+cv::Mat DeterministicTexture() {
+    cv::Mat image(480, 640, CV_8UC1);
+    cv::RNG random(0x51a7u);
+    random.fill(image, cv::RNG::UNIFORM, 0, 256);
+    return image;
+}
+
 ORB_SLAM2::Frame MakeFrame(const cv::Mat& image,
                            ORB_SLAM2::ORBextractor* extractor,
                            const ORB_SLAM2::semantic::DynamicScoreMap* scores,
@@ -27,6 +35,41 @@ ORB_SLAM2::Frame MakeFrame(const cv::Mat& image,
     cv::Mat distortion = cv::Mat::zeros(4, 1, CV_32F);
     return ORB_SLAM2::Frame(image, depth, 1.25, extractor, NULL, K,
                             distortion, 40.0f, 3.0f, scores, telemetry);
+}
+
+ORB_SLAM2::Frame MakeLegacyFrame(const cv::Mat& image,
+                                 ORB_SLAM2::ORBextractor* extractor) {
+    cv::Mat depth(image.rows, image.cols, CV_32F, cv::Scalar(1.0f));
+    cv::Mat K = (cv::Mat_<float>(3, 3) << 525.0f, 0.0f, 319.5f,
+                 0.0f, 525.0f, 239.5f, 0.0f, 0.0f, 1.0f);
+    cv::Mat distortion = cv::Mat::zeros(4, 1, CV_32F);
+    return ORB_SLAM2::Frame(image, depth, 1.25, extractor, NULL, K,
+                            distortion, 40.0f, 3.0f);
+}
+
+TEST(FrameMaskInvariants, OptionalNullConstructorExactlyMatchesLegacyConstructor) {
+    cv::Mat image = DeterministicTexture();
+    ORB_SLAM2::ORBextractor legacy_extractor(40, 1.2f, 4, 20, 7);
+    ORB_SLAM2::ORBextractor optional_extractor(40, 1.2f, 4, 20, 7);
+    ORB_SLAM2::Frame legacy = MakeLegacyFrame(image, &legacy_extractor);
+    ORB_SLAM2::Frame optional = MakeFrame(image, &optional_extractor, NULL, NULL);
+    ASSERT_EQ(legacy.N, optional.N);
+    EXPECT_EQ(0, cv::countNonZero(legacy.mDescriptors != optional.mDescriptors));
+    EXPECT_EQ(legacy.mvDepth, optional.mvDepth);
+    EXPECT_EQ(legacy.mvuRight, optional.mvuRight);
+    ASSERT_EQ(legacy.mvKeys.size(), optional.mvKeys.size());
+    for (std::size_t i = 0; i < legacy.mvKeys.size(); ++i) {
+        EXPECT_EQ(legacy.mvKeys[i].pt, optional.mvKeys[i].pt);
+        EXPECT_EQ(legacy.mvKeys[i].octave, optional.mvKeys[i].octave);
+        EXPECT_FLOAT_EQ(legacy.mvKeys[i].angle, optional.mvKeys[i].angle);
+        EXPECT_EQ(legacy.mvKeysUn[i].pt, optional.mvKeysUn[i].pt);
+    }
+    EXPECT_FLOAT_EQ(legacy.mb, optional.mb);
+    EXPECT_EQ(legacy.mnScaleLevels, optional.mnScaleLevels);
+    EXPECT_EQ(legacy.mvScaleFactors, optional.mvScaleFactors);
+    for (int x = 0; x < FRAME_GRID_COLS; ++x)
+        for (int y = 0; y < FRAME_GRID_ROWS; ++y)
+            EXPECT_EQ(legacy.mGrid[x][y], optional.mGrid[x][y]);
 }
 
 TEST(FrameMaskInvariants, NullMapPreservesOriginalExtractedArrays) {
@@ -89,6 +132,18 @@ TEST(FrameMaskInvariants, HighScoreMapProducesNoMapCandidates) {
     EXPECT_TRUE(frame.mvpMapPoints.empty());
     EXPECT_TRUE(frame.mvDepth.empty());
     EXPECT_EQ(telemetry.raw_keypoints, telemetry.removed_dynamic);
+    EXPECT_TRUE(std::isfinite(frame.mb));
+    EXPECT_TRUE(frame.mvKeys.empty());
+    EXPECT_TRUE(frame.mvKeysUn.empty());
+    EXPECT_TRUE(frame.mvuRight.empty());
+    EXPECT_TRUE(frame.mvbOutlier.empty());
+    EXPECT_EQ(CV_8U, frame.mDescriptors.type());
+    EXPECT_EQ(32, frame.mDescriptors.cols);
+    ORB_SLAM2::Frame copied(frame);
+    EXPECT_TRUE(std::isfinite(copied.mb));
+    EXPECT_EQ(0, copied.N);
+    EXPECT_EQ(CV_8U, copied.mDescriptors.type());
+    EXPECT_EQ(32, copied.mDescriptors.cols);
 }
 
 }  // namespace

@@ -8,7 +8,9 @@ import csv
 import hashlib
 import json
 import math
+import os
 import statistics
+import subprocess
 from pathlib import Path
 from typing import Sequence
 
@@ -24,6 +26,60 @@ def _sha256_file(path: Path) -> str:
         for block in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(block)
     return digest.hexdigest()
+
+
+def _write_json_atomic(path: Path, value: dict[str, object]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.parent / f".{path.name}.partial"
+    with temporary.open("w", encoding="utf-8", newline="\n") as stream:
+        json.dump(value, stream, indent=2, sort_keys=True)
+        stream.write("\n")
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.replace(temporary, path)
+    directory_fd = os.open(path.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    try:
+        os.fsync(directory_fd)
+    finally:
+        os.close(directory_fd)
+
+
+def _validate_registered_pair(
+    oracle: dict[str, object], candidate: dict[str, object], *,
+    sequence_id: str, seed: int, dataset_manifest_sha256: str,
+    source_tree_sha256: str, experiment_manifest_sha256: str,
+) -> None:
+    expected = ((oracle, "oracle", "baseline"),
+                (candidate, "equivalence", "baseline"))
+    for manifest, study, mode in expected:
+        if (manifest.get("sequence_id") != sequence_id or
+                manifest.get("seed") != seed or
+                manifest.get("study") != study or manifest.get("mode") != mode):
+            raise ValueError("run registration sequence/seed/study/mode mismatch")
+        producer = manifest.get("producer_commit")
+        if (not isinstance(producer, str) or len(producer) != 40 or
+                any(character not in "0123456789abcdef" for character in producer)):
+            raise ValueError("run producer identity is not explicit")
+    for field in ("compatibility_commit", "vocabulary", "settings",
+                  "association_sha256", "dataset_manifest_sha256",
+                  "expected_frames"):
+        if oracle.get(field) != candidate.get(field):
+            raise ValueError(f"oracle/candidate registration differs for {field}")
+    if oracle.get("dataset_manifest_sha256") != dataset_manifest_sha256:
+        raise ValueError("run dataset identity differs from current frozen manifest")
+    if candidate.get("cache_identity") is not None or candidate.get("cache_root") is not None:
+        raise ValueError("equivalence candidate registered semantic cache assets")
+    if candidate.get("pacing") != "dataset_timestamp_paced_relative":
+        raise ValueError("candidate pacing identity differs from oracle protocol")
+    verified = candidate.get("verified_inputs")
+    if (not isinstance(verified, dict) or
+            verified.get("source_tree_sha256") != source_tree_sha256):
+        raise ValueError("candidate source-tree identity mismatch")
+    registration = candidate.get("registration_identity")
+    if (not isinstance(registration, dict) or
+            registration.get("experiment_manifest_sha256") !=
+            experiment_manifest_sha256):
+        raise ValueError("candidate experiment/config identity mismatch")
 
 
 def parse_tum_trajectory(path: Path) -> list[TrajectoryRow]:
@@ -231,6 +287,13 @@ def measure_run(
         raise ValueError(f"telemetry coverage differs from run manifest: {run_dir}")
     return {
         "seed": int(manifest["seed"]),
+        "producer_commit": manifest.get("producer_commit"),
+        "compatibility_commit": manifest.get("compatibility_commit"),
+        "executable_sha256": manifest.get("executable", {}).get("sha256"),
+        "vocabulary_sha256": manifest.get("vocabulary", {}).get("sha256"),
+        "settings_sha256": manifest.get("settings", {}).get("sha256"),
+        "association_sha256": manifest.get("association_sha256"),
+        "dataset_manifest_sha256": manifest.get("dataset_manifest_sha256"),
         "valid_pose_fraction": valid_fraction,
         "ate_rmse_m": ate_rmse,
         "associated_pose_count": associated,
@@ -253,24 +316,33 @@ def build_equivalence_report(
         raise ValueError("experiment manifest must freeze five unique seeds")
     sequences: dict[str, object] = {}
     all_valid = True
+    experiment_sha = _sha256_file(experiment_manifest)
     for dataset in manifest["datasets"]:
         sequence_id = str(dataset["id"])
         sequence_root = data_root / str(dataset["archive"])[:-4]
         groundtruth_path = sequence_root / "groundtruth.txt"
-        oracle_rows = [
-            measure_run(
-                _completed_attempt(oracle_root / sequence_id / f"seed-{seed}"),
-                groundtruth_path, require_no_semantic_access=False,
-            )
-            for seed in seeds
-        ]
-        candidate_rows = [
-            measure_run(
-                _completed_attempt(candidate_root / sequence_id / f"seed-{seed}"),
-                groundtruth_path, require_no_semantic_access=True,
-            )
-            for seed in seeds
-        ]
+        dataset_manifest_path = data_root.parent / "manifests" / f"{sequence_id}.json"
+        dataset_identity = json.loads(dataset_manifest_path.read_text(encoding="utf-8"))
+        dataset_sha = _sha256_file(dataset_manifest_path)
+        source_tree = str(dataset_identity["extracted_tree_sha256"])
+        oracle_rows = []
+        candidate_rows = []
+        for seed in seeds:
+            oracle_dir = _completed_attempt(oracle_root / sequence_id / f"seed-{seed}")
+            candidate_dir = _completed_attempt(candidate_root / sequence_id / f"seed-{seed}")
+            oracle_manifest = json.loads(
+                (oracle_dir / "run_manifest.json").read_text(encoding="utf-8"))
+            candidate_manifest = json.loads(
+                (candidate_dir / "run_manifest.json").read_text(encoding="utf-8"))
+            _validate_registered_pair(
+                oracle_manifest, candidate_manifest, sequence_id=sequence_id,
+                seed=seed, dataset_manifest_sha256=dataset_sha,
+                source_tree_sha256=source_tree,
+                experiment_manifest_sha256=experiment_sha)
+            oracle_rows.append(measure_run(
+                oracle_dir, groundtruth_path, require_no_semantic_access=False))
+            candidate_rows.append(measure_run(
+                candidate_dir, groundtruth_path, require_no_semantic_access=True))
         result = verify_equivalence(oracle_rows, candidate_rows)
         all_valid = all_valid and bool(result["valid"])
         sequences[sequence_id] = {
@@ -279,11 +351,33 @@ def build_equivalence_report(
             "equivalence": result,
         }
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "study_id": manifest["study_id"],
         "valid": all_valid,
         "trajectory_alignment": "SE3",
         "association_max_difference_seconds": 0.02,
+        "tool_sha256": _sha256_file(Path(__file__).resolve()),
+        "code_identity": subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=Path(__file__).resolve().parent.parent,
+            text=True).strip(),
+        "numpy_version": np.__version__,
+        "parameters": {
+            "oracle_root": str(oracle_root.resolve()),
+            "candidate_root": str(candidate_root.resolve()),
+            "data_root": str(data_root.resolve()),
+            "experiment_manifest": str(experiment_manifest.resolve()),
+            "experiment_manifest_sha256": experiment_sha,
+            "required_runs_per_sequence": 5,
+            "study_id": manifest["study_id"],
+            "sequence_ids": [str(item["id"]) for item in manifest["datasets"]],
+            "seeds": seeds,
+            "playback": manifest.get("playback"),
+            "association_max_difference_seconds": 0.02,
+            "trajectory_alignment": "SE3_no_scale",
+            "valid_pose_fraction_tolerance": 0.005,
+            "ate_tolerance_floor_m": 1e-4,
+            "ate_tolerance_pooled_mad_multiplier": 2.0,
+        },
         "sequences": sequences,
     }
 
@@ -302,8 +396,7 @@ def main() -> int:
         oracle_root=args.oracle_root, candidate_root=args.candidate_root,
         data_root=args.data_root, experiment_manifest=args.manifest,
     )
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    _write_json_atomic(args.output, result)
     return 0 if result["valid"] else 1
 
 

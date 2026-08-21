@@ -26,7 +26,15 @@ struct FrameTelemetry {
     SemanticState semantic_state;
     double cache_load_seconds;
     double policy_seconds;
+    double pacing_lateness_seconds;
 };
+
+struct PacingDecision {
+    double sleep_seconds;
+    double lateness_seconds;
+};
+
+PacingDecision decidePacing(double interval_seconds, double elapsed_seconds);
 
 const char* semanticStateName(SemanticState state);
 std::string telemetryCsvHeader();

@@ -1,6 +1,9 @@
 #include <gtest/gtest.h>
 
 #include <cstdint>
+#include <sstream>
+#include <string>
+#include <vector>
 
 #include "semantic/FeatureMaskPolicy.h"
 #include "semantic/Telemetry.h"
@@ -33,6 +36,27 @@ TEST(PacingDecision, DeductsAllPostLoadProcessingAndReportsLateness) {
         ORB_SLAM2::semantic::decidePacing(0.05, 0.08);
     EXPECT_DOUBLE_EQ(late.sleep_seconds, 0.0);
     EXPECT_DOUBLE_EQ(late.lateness_seconds, 0.03);
+}
+
+TEST(TelemetryCsv, RoundTripsRealTumTimestampAndAllDoubleFields) {
+    const double timestamp = 1341845820.751833;
+    const double tracking = 0.012345678901234567;
+    ORB_SLAM2::semantic::FrameTelemetry telemetry;
+    telemetry.cache_load_seconds = 0.023456789012345678;
+    telemetry.policy_seconds = 0.034567890123456789;
+    telemetry.pacing_lateness_seconds = 0.045678901234567891;
+    const std::string csv = ORB_SLAM2::semantic::formatTelemetryCsv(
+        0, timestamp, 2, true, tracking, telemetry);
+    std::vector<std::string> fields;
+    std::istringstream stream(csv);
+    std::string field;
+    while (std::getline(stream, field, ',')) fields.push_back(field);
+    ASSERT_EQ(15u, fields.size());
+    EXPECT_EQ(timestamp, std::stod(fields[1]));
+    EXPECT_EQ(tracking, std::stod(fields[4]));
+    EXPECT_EQ(telemetry.cache_load_seconds, std::stod(fields[12]));
+    EXPECT_EQ(telemetry.policy_seconds, std::stod(fields[13]));
+    EXPECT_EQ(telemetry.pacing_lateness_seconds, std::stod(fields[14]));
 }
 
 TEST(FeatureMaskPolicy, UncertainDecisionIsStableAndSequenceBound) {

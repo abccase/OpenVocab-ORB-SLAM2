@@ -11,10 +11,17 @@ import math
 import os
 import statistics
 import subprocess
+import sys
 from pathlib import Path
 from typing import Sequence
 
 import numpy as np
+
+REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
+if str(REPOSITORY_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPOSITORY_ROOT))
+
+from semantic_py.openvocab_slam.config import FORMAL_BASELINE_PRODUCER_COMMIT
 
 
 TrajectoryRow = tuple[float, float, float, float, float, float, float, float]
@@ -48,10 +55,19 @@ def _validate_registered_pair(
     oracle: dict[str, object], candidate: dict[str, object], *,
     sequence_id: str, seed: int, dataset_manifest_sha256: str,
     source_tree_sha256: str, experiment_manifest_sha256: str,
+    expected_oracle_producer_commit: str,
+    expected_candidate_producer_commit: str,
 ) -> None:
-    expected = ((oracle, "oracle", "baseline"),
-                (candidate, "equivalence", "baseline"))
-    for manifest, study, mode in expected:
+    expected = (
+        (oracle, "oracle", "baseline", "oracle", expected_oracle_producer_commit),
+        (candidate, "equivalence", "baseline", "candidate",
+         expected_candidate_producer_commit),
+    )
+    for manifest, study, mode, label, expected_producer in expected:
+        if (not isinstance(expected_producer, str) or len(expected_producer) != 40 or
+                any(character not in "0123456789abcdef"
+                    for character in expected_producer)):
+            raise ValueError(f"expected {label} producer identity is not explicit")
         if (manifest.get("sequence_id") != sequence_id or
                 manifest.get("seed") != seed or
                 manifest.get("study") != study or manifest.get("mode") != mode):
@@ -60,6 +76,8 @@ def _validate_registered_pair(
         if (not isinstance(producer, str) or len(producer) != 40 or
                 any(character not in "0123456789abcdef" for character in producer)):
             raise ValueError("run producer identity is not explicit")
+        if producer != expected_producer:
+            raise ValueError(f"{label} producer identity differs from trusted expectation")
     for field in ("compatibility_commit", "vocabulary", "settings",
                   "association_sha256", "dataset_manifest_sha256",
                   "expected_frames"):
@@ -309,6 +327,7 @@ def measure_run(
 def build_equivalence_report(
     *, oracle_root: Path, candidate_root: Path, data_root: Path,
     experiment_manifest: Path,
+    expected_oracle_producer_commit: str = FORMAL_BASELINE_PRODUCER_COMMIT,
 ) -> dict[str, object]:
     manifest = json.loads(experiment_manifest.read_text(encoding="utf-8"))
     seeds = [int(seed) for seed in manifest["random_seeds"]]
@@ -317,6 +336,8 @@ def build_equivalence_report(
     sequences: dict[str, object] = {}
     all_valid = True
     experiment_sha = _sha256_file(experiment_manifest)
+    candidate_producer_commit = subprocess.check_output(
+        ["git", "rev-parse", "HEAD"], cwd=REPOSITORY_ROOT, text=True).strip()
     for dataset in manifest["datasets"]:
         sequence_id = str(dataset["id"])
         sequence_root = data_root / str(dataset["archive"])[:-4]
@@ -338,7 +359,9 @@ def build_equivalence_report(
                 oracle_manifest, candidate_manifest, sequence_id=sequence_id,
                 seed=seed, dataset_manifest_sha256=dataset_sha,
                 source_tree_sha256=source_tree,
-                experiment_manifest_sha256=experiment_sha)
+                experiment_manifest_sha256=experiment_sha,
+                expected_oracle_producer_commit=expected_oracle_producer_commit,
+                expected_candidate_producer_commit=candidate_producer_commit)
             oracle_rows.append(measure_run(
                 oracle_dir, groundtruth_path, require_no_semantic_access=False))
             candidate_rows.append(measure_run(
@@ -357,9 +380,11 @@ def build_equivalence_report(
         "trajectory_alignment": "SE3",
         "association_max_difference_seconds": 0.02,
         "tool_sha256": _sha256_file(Path(__file__).resolve()),
-        "code_identity": subprocess.check_output(
-            ["git", "rev-parse", "HEAD"], cwd=Path(__file__).resolve().parent.parent,
-            text=True).strip(),
+        "code_identity": candidate_producer_commit,
+        "producer_identity": {
+            "oracle_expected_commit": expected_oracle_producer_commit,
+            "candidate_expected_commit": candidate_producer_commit,
+        },
         "numpy_version": np.__version__,
         "parameters": {
             "oracle_root": str(oracle_root.resolve()),

@@ -20,6 +20,8 @@ from tools.verify_baseline_equivalence import (
 
 class BaselineEquivalenceTests(unittest.TestCase):
     def test_registered_pair_rejects_every_condition_identity_mismatch(self) -> None:
+        expected_oracle_producer = "58014b7c1f2b73427b67b4e80a8cf334127f48ea"
+        expected_candidate_producer = "2" * 40
         shared = {
             "compatibility_commit": "a" * 40,
             "vocabulary": {"sha256": "b" * 64},
@@ -30,7 +32,7 @@ class BaselineEquivalenceTests(unittest.TestCase):
         }
         oracle = {**shared, "study": "oracle", "mode": "baseline",
                   "sequence_id": "tiny", "seed": 23011,
-                  "producer_commit": "1" * 40}
+                  "producer_commit": expected_oracle_producer}
         candidate = {**shared, "study": "equivalence", "mode": "baseline",
                      "sequence_id": "tiny", "seed": 23011,
                      "producer_commit": "2" * 40, "cache_identity": None,
@@ -40,7 +42,9 @@ class BaselineEquivalenceTests(unittest.TestCase):
         _validate_registered_pair(
             oracle, candidate, sequence_id="tiny", seed=23011,
             dataset_manifest_sha256="e" * 64, source_tree_sha256="f" * 64,
-            experiment_manifest_sha256="9" * 64)
+            experiment_manifest_sha256="9" * 64,
+            expected_oracle_producer_commit=expected_oracle_producer,
+            expected_candidate_producer_commit=expected_candidate_producer)
         mutations = [
             ("sequence", "sequence_id", "other"),
             ("seed", "seed", 23012),
@@ -64,7 +68,9 @@ class BaselineEquivalenceTests(unittest.TestCase):
                         oracle, broken, sequence_id="tiny", seed=23011,
                         dataset_manifest_sha256="e" * 64,
                         source_tree_sha256="f" * 64,
-                        experiment_manifest_sha256="9" * 64)
+                        experiment_manifest_sha256="9" * 64,
+                        expected_oracle_producer_commit=expected_oracle_producer,
+                        expected_candidate_producer_commit=expected_candidate_producer)
         for label, nested, value in (
             ("source-tree", "source_tree_sha256", "0" * 64),
         ):
@@ -76,14 +82,36 @@ class BaselineEquivalenceTests(unittest.TestCase):
                         oracle, broken, sequence_id="tiny", seed=23011,
                         dataset_manifest_sha256="e" * 64,
                         source_tree_sha256="f" * 64,
-                        experiment_manifest_sha256="9" * 64)
+                        experiment_manifest_sha256="9" * 64,
+                        expected_oracle_producer_commit=expected_oracle_producer,
+                        expected_candidate_producer_commit=expected_candidate_producer)
         broken = json.loads(json.dumps(candidate))
         broken["registration_identity"]["experiment_manifest_sha256"] = "0" * 64
         with self.assertRaises(ValueError):
             _validate_registered_pair(
                 oracle, broken, sequence_id="tiny", seed=23011,
                 dataset_manifest_sha256="e" * 64, source_tree_sha256="f" * 64,
-                experiment_manifest_sha256="9" * 64)
+                experiment_manifest_sha256="9" * 64,
+                expected_oracle_producer_commit=expected_oracle_producer,
+                expected_candidate_producer_commit=expected_candidate_producer)
+
+        for label, base, producer in (
+            ("oracle", oracle, "3" * 40),
+            ("candidate", candidate, "4" * 40),
+        ):
+            with self.subTest(valid_but_untrusted_producer=label):
+                broken = json.loads(json.dumps(base))
+                broken["producer_commit"] = producer
+                checked_oracle = broken if label == "oracle" else oracle
+                checked_candidate = broken if label == "candidate" else candidate
+                with self.assertRaisesRegex(ValueError, f"{label} producer"):
+                    _validate_registered_pair(
+                        checked_oracle, checked_candidate, sequence_id="tiny", seed=23011,
+                        dataset_manifest_sha256="e" * 64,
+                        source_tree_sha256="f" * 64,
+                        experiment_manifest_sha256="9" * 64,
+                        expected_oracle_producer_commit=expected_oracle_producer,
+                        expected_candidate_producer_commit=expected_candidate_producer)
 
     def test_atomic_report_writer_publishes_complete_json(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

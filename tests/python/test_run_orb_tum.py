@@ -334,6 +334,22 @@ class OracleRunnerTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     _validate_ov_telemetry(path, 1, "baseline", ["1.0"])
 
+    def test_ov_telemetry_matches_real_tum_timestamp_by_exact_double_value(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "telemetry.csv"
+            header = ("frame_index,timestamp,tracking_state,pose_valid,tracking_time_seconds,"
+                      "raw_keypoints,used_keypoints,removed_dynamic,retained_uncertain,"
+                      "removed_uncertain,semantic_accessed,semantic_state,cache_load_seconds,"
+                      "policy_seconds,pacing_lateness_seconds\n")
+            suffix = ",2,1,0.01,100,100,0,0,0,0,BASELINE,0,0,0\n"
+            path.write_text(header + "0,1341845820.751833" + suffix, encoding="utf-8")
+            self.assertEqual(_validate_ov_telemetry(
+                path, 1, "baseline", ["1341845820.751833"]), 1)
+            path.write_text(header + "0,1341845820.75183" + suffix, encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "timestamp differs"):
+                _validate_ov_telemetry(
+                    path, 1, "baseline", ["1341845820.751833"])
+
     def test_cli_exposes_only_formal_dual_modes(self) -> None:
         completed = subprocess.run(
             ["python3", "tools/run_orb_tum.py", "--mode", "baseline-equivalence",

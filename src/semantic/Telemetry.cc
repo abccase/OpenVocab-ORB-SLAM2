@@ -3,6 +3,7 @@
 #include <iomanip>
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <stdexcept>
 #include <sstream>
 
@@ -47,7 +48,8 @@ std::string formatTelemetryCsv(std::size_t frame_index, double timestamp,
                                double tracking_time_seconds,
                                const FrameTelemetry& telemetry) {
     std::ostringstream output;
-    output << std::setprecision(15) << frame_index << ',' << timestamp << ','
+    output << std::setprecision(std::numeric_limits<double>::max_digits10)
+           << frame_index << ',' << timestamp << ','
            << tracking_state << ',' << (pose_valid ? 1 : 0) << ','
            << tracking_time_seconds << ',' << telemetry.raw_keypoints << ','
            << telemetry.used_keypoints << ',' << telemetry.removed_dynamic << ','

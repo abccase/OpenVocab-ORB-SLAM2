@@ -9,6 +9,7 @@ from pathlib import Path
 import numpy as np
 
 from tools.verify_baseline_equivalence import (
+    _completed_attempt,
     _validate_registered_pair,
     _write_json_atomic,
     associate_timestamps,
@@ -19,6 +20,32 @@ from tools.verify_baseline_equivalence import (
 
 
 class BaselineEquivalenceTests(unittest.TestCase):
+    def test_completed_attempt_selects_only_the_expected_producer(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            expected = "a" * 40
+            stale = "b" * 40
+            for number, producer in ((1, stale), (2, expected)):
+                attempt = root / f"attempt-{number:03d}"
+                attempt.mkdir()
+                (attempt / "run_manifest.json").write_text(json.dumps({
+                    "state": "COMPLETED", "valid": True,
+                    "producer_commit": producer,
+                }), encoding="utf-8")
+            self.assertEqual(
+                _completed_attempt(root, expected_producer_commit=expected).name,
+                "attempt-002",
+            )
+
+            duplicate = root / "attempt-003"
+            duplicate.mkdir()
+            (duplicate / "run_manifest.json").write_text(json.dumps({
+                "state": "COMPLETED", "valid": True,
+                "producer_commit": expected,
+            }), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "expected producer"):
+                _completed_attempt(root, expected_producer_commit=expected)
+
     def test_registered_pair_rejects_every_condition_identity_mismatch(self) -> None:
         expected_oracle_producer = "58014b7c1f2b73427b67b4e80a8cf334127f48ea"
         expected_candidate_producer = "2" * 40

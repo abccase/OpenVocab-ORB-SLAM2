@@ -263,17 +263,27 @@ def _telemetry_pose_fraction(path: Path, *, require_no_semantic_access: bool) ->
     return sum(pose_valid) / len(pose_valid), len(pose_valid)
 
 
-def _completed_attempt(condition_root: Path) -> Path:
+def _completed_attempt(
+    condition_root: Path, *, expected_producer_commit: str,
+) -> Path:
+    if (len(expected_producer_commit) != 40 or
+            any(character not in "0123456789abcdef"
+                for character in expected_producer_commit)):
+        raise ValueError("expected producer identity is not explicit")
     valid: list[Path] = []
     for attempt in sorted(condition_root.glob("attempt-*")):
         manifest_path = attempt / "run_manifest.json"
         if not manifest_path.is_file():
             continue
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        if manifest.get("state") == "COMPLETED" and manifest.get("valid") is True:
+        if (manifest.get("state") == "COMPLETED" and
+                manifest.get("valid") is True and
+                manifest.get("producer_commit") == expected_producer_commit):
             valid.append(attempt)
     if len(valid) != 1:
-        raise ValueError(f"expected exactly one valid attempt under {condition_root}, got {len(valid)}")
+        raise ValueError(
+            f"expected exactly one valid attempt for expected producer under "
+            f"{condition_root}, got {len(valid)}")
     return valid[0]
 
 
@@ -349,8 +359,12 @@ def build_equivalence_report(
         oracle_rows = []
         candidate_rows = []
         for seed in seeds:
-            oracle_dir = _completed_attempt(oracle_root / sequence_id / f"seed-{seed}")
-            candidate_dir = _completed_attempt(candidate_root / sequence_id / f"seed-{seed}")
+            oracle_dir = _completed_attempt(
+                oracle_root / sequence_id / f"seed-{seed}",
+                expected_producer_commit=expected_oracle_producer_commit)
+            candidate_dir = _completed_attempt(
+                candidate_root / sequence_id / f"seed-{seed}",
+                expected_producer_commit=candidate_producer_commit)
             oracle_manifest = json.loads(
                 (oracle_dir / "run_manifest.json").read_text(encoding="utf-8"))
             candidate_manifest = json.loads(

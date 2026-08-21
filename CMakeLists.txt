@@ -43,6 +43,7 @@ if(NOT OpenCV_FOUND)
 endif()
 
 find_package(Eigen3 3.1.0 REQUIRED)
+find_package(OpenSSL REQUIRED)
 if(ORB_SLAM2_BUILD_VIEWER)
    find_package(Pangolin REQUIRED)
 endif()
@@ -78,6 +79,9 @@ src/Frame.cc
 src/KeyFrameDatabase.cc
 src/Sim3Solver.cc
 src/Initializer.cc
+src/semantic/FeatureMaskPolicy.cc
+src/semantic/CacheMaskProvider.cc
+src/semantic/Telemetry.cc
 )
 
 if(ORB_SLAM2_BUILD_VIEWER)
@@ -99,6 +103,7 @@ ${OpenCV_LIBS}
 ${EIGEN3_LIBS}
 ${PROJECT_SOURCE_DIR}/Thirdparty/DBoW2/lib/libDBoW2.so
 ${PROJECT_SOURCE_DIR}/Thirdparty/g2o/lib/libg2o.so
+OpenSSL::Crypto
 )
 
 if(ORB_SLAM2_BUILD_VIEWER)
@@ -118,6 +123,15 @@ if(BUILD_TESTING)
       ${PROJECT_SOURCE_DIR}/Thirdparty/g2o/lib/libg2o.so
       GTest::gtest_main)
    add_test(NAME g2o_abi COMMAND test_g2o_abi)
+   add_executable(test_feature_mask_policy tests/cpp/test_feature_mask_policy.cc)
+   target_link_libraries(test_feature_mask_policy ${PROJECT_NAME} GTest::gtest_main)
+   add_test(NAME feature_mask_policy COMMAND test_feature_mask_policy)
+   add_executable(test_frame_mask_invariants tests/cpp/test_frame_mask_invariants.cc)
+   target_link_libraries(test_frame_mask_invariants ${PROJECT_NAME} GTest::gtest_main)
+   add_test(NAME frame_mask_invariants COMMAND test_frame_mask_invariants)
+   add_executable(test_cache_mask_provider tests/cpp/test_cache_mask_provider.cc)
+   target_link_libraries(test_cache_mask_provider ${PROJECT_NAME} GTest::gtest_main)
+   add_test(NAME cache_mask_provider COMMAND test_cache_mask_provider)
 endif()
 
 # Build examples
@@ -127,6 +141,10 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/Examples/RGB-D)
 add_executable(rgbd_tum
 Examples/RGB-D/rgbd_tum.cc)
 target_link_libraries(rgbd_tum ${PROJECT_NAME})
+
+add_executable(rgbd_tum_ov
+Examples/RGB-D/rgbd_tum_ov.cc)
+target_link_libraries(rgbd_tum_ov ${PROJECT_NAME})
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/Examples/Stereo)
 

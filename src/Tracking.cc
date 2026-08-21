@@ -207,6 +207,14 @@ cv::Mat Tracking::GrabImageStereo(const cv::Mat &imRectLeft, const cv::Mat &imRe
 
 cv::Mat Tracking::GrabImageRGBD(const cv::Mat &imRGB,const cv::Mat &imD, const double &timestamp)
 {
+    return GrabImageRGBD(imRGB, imD, timestamp, NULL, NULL);
+}
+
+cv::Mat Tracking::GrabImageRGBD(const cv::Mat &imRGB,const cv::Mat &imD,
+                                const double &timestamp,
+                                const semantic::DynamicScoreMap* score_map,
+                                semantic::FrameTelemetry* telemetry)
+{
     mImGray = imRGB;
     cv::Mat imDepth = imD;
 
@@ -228,7 +236,9 @@ cv::Mat Tracking::GrabImageRGBD(const cv::Mat &imRGB,const cv::Mat &imD, const d
     if((fabs(mDepthMapFactor-1.0f)>1e-5) || imDepth.type()!=CV_32F)
         imDepth.convertTo(imDepth,CV_32F,mDepthMapFactor);
 
-    mCurrentFrame = Frame(mImGray,imDepth,timestamp,mpORBextractorLeft,mpORBVocabulary,mK,mDistCoef,mbf,mThDepth);
+    mCurrentFrame = Frame(mImGray,imDepth,timestamp,mpORBextractorLeft,
+                          mpORBVocabulary,mK,mDistCoef,mbf,mThDepth,
+                          score_map,telemetry);
 
     Track();
 

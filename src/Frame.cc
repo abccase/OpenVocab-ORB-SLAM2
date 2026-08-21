@@ -21,6 +21,9 @@
 #include "Frame.h"
 #include "Converter.h"
 #include "ORBmatcher.h"
+#include "semantic/FeatureMaskPolicy.h"
+#include <chrono>
+#include <stdexcept>
 #include <thread>
 
 namespace ORB_SLAM2
@@ -117,6 +120,16 @@ Frame::Frame(const cv::Mat &imLeft, const cv::Mat &imRight, const double &timeSt
 }
 
 Frame::Frame(const cv::Mat &imGray, const cv::Mat &imDepth, const double &timeStamp, ORBextractor* extractor,ORBVocabulary* voc, cv::Mat &K, cv::Mat &distCoef, const float &bf, const float &thDepth)
+    : Frame(imGray, imDepth, timeStamp, extractor, voc, K, distCoef, bf,
+            thDepth, NULL, NULL)
+{}
+
+Frame::Frame(const cv::Mat &imGray, const cv::Mat &imDepth,
+             const double &timeStamp, ORBextractor* extractor,
+             ORBVocabulary* voc, cv::Mat &K, cv::Mat &distCoef,
+             const float &bf, const float &thDepth,
+             const semantic::DynamicScoreMap* score_map,
+             semantic::FrameTelemetry* telemetry)
     :mpORBvocabulary(voc),mpORBextractorLeft(extractor),mpORBextractorRight(static_cast<ORBextractor*>(NULL)),
      mTimeStamp(timeStamp), mK(K.clone()),mDistCoef(distCoef.clone()), mbf(bf), mThDepth(thDepth)
 {
@@ -134,6 +147,71 @@ Frame::Frame(const cv::Mat &imGray, const cv::Mat &imDepth, const double &timeSt
 
     // ORB extraction
     ExtractORB(0,imGray);
+
+    if(telemetry)
+    {
+        *telemetry = semantic::FrameTelemetry();
+        telemetry->raw_keypoints = mvKeys.size();
+        telemetry->used_keypoints = mvKeys.size();
+    }
+
+    // Preserve the compatibility path: no semantic object is inspected when null.
+    if(score_map)
+    {
+        const std::chrono::steady_clock::time_point policy_start =
+            std::chrono::steady_clock::now();
+        if(score_map->source_timestamp != timeStamp)
+            throw std::invalid_argument("semantic score timestamp does not match RGB-D frame");
+        if(score_map->scores_f32.type()!=CV_32FC1 ||
+           score_map->scores_f32.rows!=imGray.rows ||
+           score_map->scores_f32.cols!=imGray.cols)
+            throw std::invalid_argument("semantic score map type or dimensions do not match image");
+
+        const semantic::PolicyConfig config = {0.70f, 0.40f, 0.50f,
+                                                score_map->policy_seed};
+        std::vector<cv::KeyPoint> filtered_keys;
+        filtered_keys.reserve(mvKeys.size());
+        cv::Mat filtered_descriptors;
+        std::size_t removed_dynamic = 0;
+        std::size_t retained_uncertain = 0;
+        std::size_t removed_uncertain = 0;
+        for(std::size_t index=0; index<mvKeys.size(); ++index)
+        {
+            const int x = cvRound(mvKeys[index].pt.x);
+            const int y = cvRound(mvKeys[index].pt.y);
+            if(x<0 || x>=score_map->scores_f32.cols ||
+               y<0 || y>=score_map->scores_f32.rows)
+                throw std::invalid_argument("ORB keypoint lies outside semantic score map");
+            const semantic::FeatureDecision decision = semantic::decideFeature(
+                score_map->scores_f32.at<float>(y,x), x, y,
+                score_map->frame_key, config);
+            if(decision.reason==semantic::FeatureReason::HIGH_SCORE_REMOVE)
+                ++removed_dynamic;
+            else if(decision.reason==semantic::FeatureReason::UNCERTAIN_HASH_KEEP)
+                ++retained_uncertain;
+            else if(decision.reason==semantic::FeatureReason::UNCERTAIN_HASH_REMOVE)
+                ++removed_uncertain;
+            if(decision.keep)
+            {
+                filtered_keys.push_back(mvKeys[index]);
+                filtered_descriptors.push_back(mDescriptors.row(static_cast<int>(index)));
+            }
+        }
+        mvKeys.swap(filtered_keys);
+        mDescriptors = filtered_descriptors;
+        if(telemetry)
+        {
+            telemetry->used_keypoints = mvKeys.size();
+            telemetry->removed_dynamic = removed_dynamic;
+            telemetry->retained_uncertain = retained_uncertain;
+            telemetry->removed_uncertain = removed_uncertain;
+            telemetry->semantic_accessed = true;
+            telemetry->semantic_state = semantic::SemanticState::CACHE_VALID;
+            telemetry->policy_seconds =
+                std::chrono::duration_cast<std::chrono::duration<double> >(
+                    std::chrono::steady_clock::now()-policy_start).count();
+        }
+    }
 
     N = mvKeys.size();
 

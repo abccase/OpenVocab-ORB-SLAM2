@@ -1,0 +1,66 @@
+#include <gtest/gtest.h>
+
+#include <cstdint>
+
+#include "semantic/FeatureMaskPolicy.h"
+
+namespace {
+
+using ORB_SLAM2::semantic::FeatureReason;
+using ORB_SLAM2::semantic::PolicyConfig;
+using ORB_SLAM2::semantic::decideFeature;
+using ORB_SLAM2::semantic::makeFrameKey;
+using ORB_SLAM2::semantic::parsePolicySeed;
+
+TEST(FeatureMaskPolicy, AppliesFrozenThresholdBoundaries) {
+    const PolicyConfig config = {0.70f, 0.40f, 0.50f, 23011};
+    EXPECT_TRUE(decideFeature(0.39999f, 10, 20, 99, config).keep);
+    EXPECT_EQ(FeatureReason::LOW_SCORE_KEEP,
+              decideFeature(0.39999f, 10, 20, 99, config).reason);
+    EXPECT_EQ(0.5f, decideFeature(0.40f, 10, 20, 99, config).semantic_weight);
+    EXPECT_FALSE(decideFeature(0.70f, 10, 20, 99, config).keep);
+    EXPECT_EQ(FeatureReason::HIGH_SCORE_REMOVE,
+              decideFeature(0.71f, 10, 20, 99, config).reason);
+}
+
+TEST(FeatureMaskPolicy, UncertainDecisionIsStableAndSequenceBound) {
+    const PolicyConfig config = {0.70f, 0.40f, 0.50f, 23011};
+    const std::uint64_t a_key = makeFrameKey("fr3_sitting_xyz", "1341845820.751833");
+    const std::uint64_t b_key = makeFrameKey("fr3_walking_xyz", "1341845820.751833");
+    EXPECT_NE(a_key, b_key);
+    const auto first = decideFeature(0.55f, 10, 20, a_key, config);
+    const auto second = decideFeature(0.55f, 10, 20, a_key, config);
+    EXPECT_EQ(first.keep, second.keep);
+    EXPECT_EQ(first.reason, second.reason);
+    EXPECT_FLOAT_EQ(0.5f, first.semantic_weight);
+}
+
+TEST(FeatureMaskPolicy, UsesFrozenFnvByteEncodingAndLittleEndianIntegers) {
+    const PolicyConfig config = {0.70f, 0.40f, 0.50f, 23011};
+    const std::uint64_t frame_key =
+        makeFrameKey("fr3_sitting_xyz", "1341845820.751833");
+    EXPECT_EQ(UINT64_C(0xdeada92a12f8bffc), frame_key);
+    const auto decision = decideFeature(0.55f, 10, 20, frame_key, config);
+    EXPECT_FALSE(decision.keep);  // hash 0x8795fe95c0eed056, normalized > 0.5.
+    EXPECT_EQ(FeatureReason::UNCERTAIN_HASH_REMOVE, decision.reason);
+}
+
+TEST(FeatureMaskPolicy, UncertainRetentionConvergesToFrozenFraction) {
+    const PolicyConfig config = {0.70f, 0.40f, 0.50f, 23011};
+    int kept = 0;
+    for (int i = 0; i < 10000; ++i)
+        kept += decideFeature(0.55f, i % 640, i / 640, 42, config).keep ? 1 : 0;
+    EXPECT_GT(kept, 4700);
+    EXPECT_LT(kept, 5300);
+}
+
+TEST(FeatureMaskPolicy, ParsesFullUint64SeedAndRejectsAmbiguousValues) {
+    EXPECT_EQ(UINT64_MAX, parsePolicySeed("18446744073709551615"));
+    EXPECT_EQ(UINT64_C(0), parsePolicySeed("0"));
+    EXPECT_THROW(parsePolicySeed(""), std::invalid_argument);
+    EXPECT_THROW(parsePolicySeed("-1"), std::invalid_argument);
+    EXPECT_THROW(parsePolicySeed("+1"), std::invalid_argument);
+    EXPECT_THROW(parsePolicySeed("18446744073709551616"), std::invalid_argument);
+}
+
+}  // namespace

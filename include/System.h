@@ -35,6 +35,8 @@
 #include "KeyFrameDatabase.h"
 #include "ORBVocabulary.h"
 #include "Viewer.h"
+#include "semantic/DynamicScoreMap.h"
+#include "semantic/Telemetry.h"
 
 namespace ORB_SLAM2
 {
@@ -71,6 +73,10 @@ public:
     // Input depthmap: Float (CV_32F).
     // Returns the camera pose (empty if tracking fails).
     cv::Mat TrackRGBD(const cv::Mat &im, const cv::Mat &depthmap, const double &timestamp);
+    cv::Mat TrackRGBD(const cv::Mat &im, const cv::Mat &depthmap,
+                      const double &timestamp,
+                      const semantic::DynamicScoreMap* score_map,
+                      semantic::FrameTelemetry* telemetry);
 
     // Proccess the given monocular frame
     // Input images: RGB (CV_8UC3) or grayscale (CV_8U). RGB is converted to grayscale.

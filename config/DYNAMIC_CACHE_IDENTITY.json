@@ -1,0 +1,37 @@
+{
+  "cache_schema": "ovorb.dynamic-cache.v1",
+  "schema_version": 1,
+  "sequences": {
+    "fr1_desk": {
+      "completion_sha256": "1ec85fe79dc62a55ef429aedbbf894c2eb0193c77052e2d7f6da08379677a881",
+      "index_sha256": "b82ce4d86db8e87098ce1b19298d49cdb7696e41d621dac17235718398d3347c",
+      "manifest_sha256": "6804e8a8639fa6d8902fbb4593e95a34bcc379af9ae5b378ee520791455bc6f0"
+    },
+    "fr1_room": {
+      "completion_sha256": "8e913b9bbeff827baa718627021cb5bbae788f79127e3e65fff0fc03d0138e6d",
+      "index_sha256": "c730ef7bf6b03f181f0c84d245bc42a8d528a1e08e06148bf83be230134bd0cd",
+      "manifest_sha256": "cc4eb3764ae0c5551e86f0f2bcd94853e78c43dcf4338c489ecced12f6e42a5c"
+    },
+    "fr3_sitting_halfsphere": {
+      "completion_sha256": "45b8f8873bb6e7cc571ee53bf2df9ba7400f6054b120cee210a4591e124032af",
+      "index_sha256": "cc22767c3e6b91b5ac5e038a8d86f0783764a830cc77fc6fd1983c90e7a64fb3",
+      "manifest_sha256": "f99a45652b4678eb36d5d36a197efc580fd46c743e1e42fbf1b71af399486c31"
+    },
+    "fr3_sitting_xyz": {
+      "completion_sha256": "77336f4de8b93cc0d6e6f01e9517f68c215580c3c8f19af3117b8ae151d46dad",
+      "index_sha256": "34b5d45a3e09d107933dc070ebb194d7ddc314bf86cb1b672b5b8c4cc7bb9302",
+      "manifest_sha256": "01d2326fc75b6eeba83208ccbe05e27ea4a5e404e0ef49b69cac8c81adaa2df3"
+    },
+    "fr3_walking_halfsphere": {
+      "completion_sha256": "cdd2ca69f272f6adebd8a4353ee33c1060661aa68115316a6d72062b0ff61520",
+      "index_sha256": "dae0439da8057e933b68ec33837be0d553516bcf6ed94cb8795ba57d047cd937",
+      "manifest_sha256": "a468ffa22fc2a01cba6a878df467ad6c8080aa895ed67f41b45fa4016fd252b6"
+    },
+    "fr3_walking_xyz": {
+      "completion_sha256": "3187065a5d8a9673bd1bd09e3d9a9f6dba42dd14afde429fe1cb31cd0ddd64f0",
+      "index_sha256": "ef002ed49d76f5dfdabf66a370d9c9077d8d3f399419f368c9b46b427c6aca62",
+      "manifest_sha256": "514cd878709de37cd4fb8a9a45ce358508ab825d413fa2aef55b4f52c1a164b3"
+    }
+  },
+  "study_id": "ovorb2_tum_v1"
+}

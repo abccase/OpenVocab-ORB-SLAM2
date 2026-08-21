@@ -58,7 +58,7 @@ FeatureDecision decideFeature(float score, int x, int y,
 }
 ```
 
-Add optional score-map overloads to `System::TrackRGBD`, `Tracking::GrabImageRGBD`, and the RGB-D `Frame` constructor. The original signatures remain and delegate with no map. The baseline path must not allocate, load, or inspect semantic assets.
+Add optional score-map overloads to `System::TrackRGBD`, `Tracking::GrabImageRGBD`, and the RGB-D `Frame` constructor. The original signatures remain on their dedicated compatibility implementation; the offline baseline runner calls those signatures directly and obtains passive feature counts only after tracking returns. The semantic overload dispatches a null map to the same compatibility `Frame` path. The baseline path must not allocate, load, or inspect semantic assets. This separation is deliberate: routing the baseline hot path through semantic-aware overloads measurably perturbs ORB-SLAM2's nondeterministic local-mapping schedule.
 
 Filter keypoints and aligned descriptor rows after ORB extraction and before depth association, grid assignment, matching, and map-point creation. Preserve vector/descriptor index invariants. Raw and used counts are written to telemetry.
 

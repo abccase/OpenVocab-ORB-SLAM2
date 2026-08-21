@@ -207,7 +207,33 @@ cv::Mat Tracking::GrabImageStereo(const cv::Mat &imRectLeft, const cv::Mat &imRe
 
 cv::Mat Tracking::GrabImageRGBD(const cv::Mat &imRGB,const cv::Mat &imD, const double &timestamp)
 {
-    return GrabImageRGBD(imRGB, imD, timestamp, NULL, NULL);
+    mImGray = imRGB;
+    cv::Mat imDepth = imD;
+
+    if(mImGray.channels()==3)
+    {
+        if(mbRGB)
+            cvtColor(mImGray,mImGray,cv::COLOR_RGB2GRAY);
+        else
+            cvtColor(mImGray,mImGray,cv::COLOR_BGR2GRAY);
+    }
+    else if(mImGray.channels()==4)
+    {
+        if(mbRGB)
+            cvtColor(mImGray,mImGray,cv::COLOR_RGBA2GRAY);
+        else
+            cvtColor(mImGray,mImGray,cv::COLOR_BGRA2GRAY);
+    }
+
+    if((fabs(mDepthMapFactor-1.0f)>1e-5) || imDepth.type()!=CV_32F)
+        imDepth.convertTo(imDepth,CV_32F,mDepthMapFactor);
+
+    mCurrentFrame = Frame(mImGray,imDepth,timestamp,mpORBextractorLeft,
+                          mpORBVocabulary,mK,mDistCoef,mbf,mThDepth);
+
+    Track();
+
+    return mCurrentFrame.mTcw.clone();
 }
 
 cv::Mat Tracking::GrabImageRGBD(const cv::Mat &imRGB,const cv::Mat &imD,
@@ -236,9 +262,26 @@ cv::Mat Tracking::GrabImageRGBD(const cv::Mat &imRGB,const cv::Mat &imD,
     if((fabs(mDepthMapFactor-1.0f)>1e-5) || imDepth.type()!=CV_32F)
         imDepth.convertTo(imDepth,CV_32F,mDepthMapFactor);
 
-    mCurrentFrame = Frame(mImGray,imDepth,timestamp,mpORBextractorLeft,
-                          mpORBVocabulary,mK,mDistCoef,mbf,mThDepth,
-                          score_map,telemetry);
+    if(score_map)
+    {
+        mCurrentFrame = Frame(mImGray,imDepth,timestamp,mpORBextractorLeft,
+                              mpORBVocabulary,mK,mDistCoef,mbf,mThDepth,
+                              score_map,telemetry);
+    }
+    else
+    {
+        // Baseline compatibility is source-path sensitive because tracking and
+        // local mapping run concurrently.  Construct the unmodified RGB-D Frame
+        // first, then collect passive counts for the optional runner telemetry.
+        mCurrentFrame = Frame(mImGray,imDepth,timestamp,mpORBextractorLeft,
+                              mpORBVocabulary,mK,mDistCoef,mbf,mThDepth);
+        if(telemetry)
+        {
+            *telemetry = semantic::FrameTelemetry();
+            telemetry->raw_keypoints = mCurrentFrame.mvKeys.size();
+            telemetry->used_keypoints = mCurrentFrame.mvKeys.size();
+        }
+    }
 
     Track();
 

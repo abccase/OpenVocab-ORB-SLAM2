@@ -214,11 +214,20 @@ int main(int argc, char** argv) {
             ORB_SLAM2::semantic::FrameTelemetry frame_telemetry;
             const std::chrono::steady_clock::time_point track_start =
                 std::chrono::steady_clock::now();
-            const cv::Mat pose = slam.TrackRGBD(rgb, depth, frame.timestamp,
-                                                score_pointer, &frame_telemetry);
+            cv::Mat pose;
+            if (semantic)
+                pose = slam.TrackRGBD(rgb, depth, frame.timestamp,
+                                     score_pointer, &frame_telemetry);
+            else
+                pose = slam.TrackRGBD(rgb, depth, frame.timestamp);
             const double tracking_seconds =
                 std::chrono::duration_cast<std::chrono::duration<double> >(
                     std::chrono::steady_clock::now() - track_start).count();
+            if (!semantic) {
+                const std::size_t keypoint_count = slam.GetTrackedKeyPointsUn().size();
+                frame_telemetry.raw_keypoints = keypoint_count;
+                frame_telemetry.used_keypoints = keypoint_count;
+            }
             frame_telemetry.cache_load_seconds = cache_seconds;
             double interval = 0.0;
             if (i + 1 < frames.size()) interval = frames[i + 1].timestamp - frame.timestamp;

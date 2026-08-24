@@ -10,11 +10,19 @@ import json
 import math
 import os
 import subprocess
+import sys
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Sequence
+
+REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
+if str(REPOSITORY_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPOSITORY_ROOT))
+
+from semantic_py.openvocab_slam.p05_protocol import ORACLE_COMMIT, STUDY_ID
 
 
 @dataclass(frozen=True)
@@ -52,6 +60,55 @@ def _sha256_file(path: Path) -> str:
 def _is_sha256(value: object) -> bool:
     return (isinstance(value, str) and len(value) == 64 and
             all(character in "0123456789abcdef" for character in value))
+
+
+def _is_commit(value: object) -> bool:
+    return (isinstance(value, str) and len(value) == 40 and
+            all(character in "0123456789abcdef" for character in value))
+
+
+def _validated_formal_identity(
+    value: Mapping[str, object] | None,
+    *,
+    condition: RunCondition,
+    expected_implementation: str,
+    producer_commit: str,
+) -> dict[str, object] | None:
+    if value is None:
+        return None
+    copied = dict(value)
+    common = {
+        "study_id", "block_id", "implementation",
+        "protocol_manifest_sha256",
+    }
+    implementation_field = (
+        "build_manifest_sha256" if expected_implementation == "oracle"
+        else "candidate_registration_commit"
+    )
+    if set(copied) != common | {implementation_field}:
+        raise ValueError("formal identity has unexpected or missing fields")
+    if copied.get("study_id") != STUDY_ID:
+        raise ValueError("formal identity has wrong study")
+    if copied.get("block_id") != f"{condition.sequence_id}-rep-{condition.seed}":
+        raise ValueError("formal identity has wrong block")
+    if copied.get("implementation") != expected_implementation:
+        raise ValueError("formal identity has wrong implementation")
+    if not _is_sha256(copied.get("protocol_manifest_sha256")):
+        raise ValueError("formal identity has invalid protocol hash")
+    if expected_implementation == "oracle":
+        if producer_commit != ORACLE_COMMIT:
+            raise ValueError("formal oracle producer differs from frozen commit")
+        if not _is_sha256(copied.get(implementation_field)):
+            raise ValueError("formal identity has invalid build-manifest hash")
+    else:
+        registration_commit = copied.get(implementation_field)
+        if not _is_commit(registration_commit) or registration_commit != producer_commit:
+            raise ValueError("formal identity has invalid candidate registration commit")
+    try:
+        json.dumps(copied, sort_keys=True, allow_nan=False)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("formal identity is not canonical JSON data") from exc
+    return copied
 
 
 def _write_json_atomic(path: Path, value: dict[str, object]) -> None:
@@ -354,6 +411,7 @@ def _completed_attempt(
     producer_commit: str,
     executable_sha256: str,
     expected_frames: int,
+    formal_identity: Mapping[str, object] | None,
 ) -> RunResult | None:
     manifest_path = attempt / "run_manifest.json"
     if not manifest_path.is_file():
@@ -367,6 +425,8 @@ def _completed_attempt(
         if manifest.get("producer_commit") != producer_commit:
             return None
         if manifest.get("executable", {}).get("sha256") != executable_sha256:
+            return None
+        if manifest.get("formal_identity") != formal_identity:
             return None
         trajectory_path = attempt / "CameraTrajectory.txt"
         keyframe_path = attempt / "KeyFrameTrajectory.txt"
@@ -393,7 +453,20 @@ def run_baseline_condition(
     producer_commit: str,
     registry: Path | None = None,
     study: str = "oracle",
+    formal_identity: Mapping[str, object] | None = None,
 ) -> RunResult:
+    validated_formal_identity = _validated_formal_identity(
+        formal_identity,
+        condition=condition,
+        expected_implementation="oracle",
+        producer_commit=producer_commit,
+    )
+    if study not in {"smoke", "oracle", STUDY_ID}:
+        raise ValueError(f"unsupported baseline study: {study}")
+    if validated_formal_identity is not None and study != STUDY_ID:
+        raise ValueError("formal identity requires the P05 V2 study")
+    if study == STUDY_ID and validated_formal_identity is None:
+        raise ValueError("P05 V2 study requires a formal identity")
     sequence_root = Path(condition.sequence_root).resolve()
     association = sequence_root / "associate.txt"
     expected_frames = _association_count(association)
@@ -410,6 +483,7 @@ def run_baseline_condition(
             producer_commit,
             executable_sha256,
             expected_frames,
+            validated_formal_identity,
         )
         if completed is not None:
             return completed
@@ -418,8 +492,6 @@ def run_baseline_condition(
     run_dir.mkdir(parents=True, exist_ok=False)
     telemetry = run_dir / "frame_telemetry.jsonl"
     command = [str(executable), str(vocabulary), str(settings), str(sequence_root), str(association)]
-    if study not in {"smoke", "oracle"}:
-        raise ValueError(f"unsupported baseline study: {study}")
     run_id = f"{study}-{condition.sequence_id}-seed-{condition.seed}-attempt-{attempt_number:03d}"
     started_utc = _utc_now()
     base_manifest: dict[str, object] = {
@@ -443,6 +515,8 @@ def run_baseline_condition(
         "state": "REGISTERED",
         "valid": False,
     }
+    if validated_formal_identity is not None:
+        base_manifest["formal_identity"] = validated_formal_identity
     _write_json_atomic(run_dir / "run_manifest.json", base_manifest)
     _append_jsonl(registry, {**base_manifest, "expected_outputs": [str(run_dir / name) for name in ("CameraTrajectory.txt", "KeyFrameTrajectory.txt", "frame_telemetry.jsonl", "run_manifest.json")]})
     running = {**base_manifest, "state": "RUNNING"}
@@ -557,11 +631,22 @@ def run_ov_condition(
     registry: Path | None = None,
     cache_root: Path | None = None,
     cache_identity: dict[str, str] | None = None,
+    formal_identity: Mapping[str, object] | None = None,
 ) -> RunResult:
     if mode not in {"baseline", "semantic-feedback"}:
         raise ValueError(f"unsupported ORB-SLAM2 mode: {mode}")
-    if study not in {"equivalence", "smoke"}:
+    if study not in {"equivalence", "smoke", STUDY_ID}:
         raise ValueError(f"unsupported semantic integration study: {study}")
+    validated_formal_identity = _validated_formal_identity(
+        formal_identity,
+        condition=condition,
+        expected_implementation="candidate",
+        producer_commit=producer_commit,
+    )
+    if validated_formal_identity is not None and study != STUDY_ID:
+        raise ValueError("formal identity requires the P05 V2 study")
+    if study == STUDY_ID and validated_formal_identity is None:
+        raise ValueError("P05 V2 study requires a formal identity")
     if mode == "baseline":
         if cache_root is not None or cache_identity is not None:
             raise ValueError("baseline mode must not receive semantic cache assets")
@@ -618,6 +703,8 @@ def run_ov_condition(
         "expected_frames": expected_frames,
         "pacing": "dataset_timestamp_paced_relative",
     }
+    if validated_formal_identity is not None:
+        registration_identity["formal_identity"] = validated_formal_identity
     condition_root = Path(output_root) / condition.sequence_id / f"seed-{condition.seed}"
     attempts = sorted(condition_root.glob("attempt-*")) if condition_root.is_dir() else []
     for attempt in attempts:
@@ -658,6 +745,8 @@ def run_ov_condition(
         "state": "REGISTERED",
         "valid": False,
     }
+    if validated_formal_identity is not None:
+        base_manifest["formal_identity"] = validated_formal_identity
     _write_json_atomic(run_dir / "run_manifest.json", base_manifest)
     _append_jsonl(registry, {
         **base_manifest,

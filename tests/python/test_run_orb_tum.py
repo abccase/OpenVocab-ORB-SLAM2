@@ -76,6 +76,42 @@ class OracleRunnerTests(unittest.TestCase):
             self.assertEqual(manifest["producer_commit"], "producer-commit")
             self.assertEqual(manifest["trajectory"]["pose_count"], 1)
             self.assertEqual(len(manifest["trajectory"]["sha256"]), 64)
+            self.assertNotIn("formal_identity", manifest)
+
+    def test_oracle_formal_identity_is_persisted_and_selects_resume(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            condition, executable, vocabulary = self.make_fixture(root)
+            formal_identity = {
+                "study_id": "ovorb2_p05_baseline_noninferiority_v2",
+                "block_id": "tiny-rep-23011",
+                "implementation": "oracle",
+                "protocol_manifest_sha256": "a" * 64,
+                "build_manifest_sha256": "b" * 64,
+            }
+            arguments = dict(
+                executable=executable,
+                vocabulary=vocabulary,
+                output_root=root / "runs",
+                compatibility_commit="baseline-commit",
+                producer_commit="58014b7c1f2b73427b67b4e80a8cf334127f48ea",
+                study="ovorb2_p05_baseline_noninferiority_v2",
+            )
+            first = run_baseline_condition(
+                condition, formal_identity=formal_identity, **arguments
+            )
+            resumed = run_baseline_condition(
+                condition, formal_identity=formal_identity, **arguments
+            )
+            changed = dict(formal_identity, protocol_manifest_sha256="c" * 64)
+            replacement = run_baseline_condition(
+                condition, formal_identity=changed, **arguments
+            )
+
+            self.assertEqual(first.run_dir, resumed.run_dir)
+            self.assertNotEqual(first.run_dir, replacement.run_dir)
+            manifest = json.loads((first.run_dir / "run_manifest.json").read_text())
+            self.assertEqual(manifest["formal_identity"], formal_identity)
 
     def test_resume_skips_only_a_still_valid_completed_run(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -193,6 +229,105 @@ class OracleRunnerTests(unittest.TestCase):
             manifest = json.loads((result.run_dir / "run_manifest.json").read_text())
             self.assertIsNone(manifest["cache_identity"])
             self.assertEqual(manifest["telemetry"]["format"], "csv")
+            self.assertNotIn("formal_identity", manifest)
+
+    def test_candidate_formal_identity_is_persisted_and_selects_resume(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            condition, executable, vocabulary = self.make_ov_fixture(root)
+            producer = "b" * 40
+            formal_identity = {
+                "study_id": "ovorb2_p05_baseline_noninferiority_v2",
+                "block_id": "tiny-rep-23011",
+                "implementation": "candidate",
+                "protocol_manifest_sha256": "a" * 64,
+                "candidate_registration_commit": producer,
+            }
+            arguments = dict(
+                mode="baseline",
+                executable=executable,
+                vocabulary=vocabulary,
+                output_root=root / "runs",
+                compatibility_commit="baseline-commit",
+                producer_commit=producer,
+                study="ovorb2_p05_baseline_noninferiority_v2",
+            )
+            first = run_ov_condition(
+                condition, formal_identity=formal_identity, **arguments
+            )
+            resumed = run_ov_condition(
+                condition, formal_identity=formal_identity, **arguments
+            )
+            changed = dict(formal_identity, protocol_manifest_sha256="c" * 64)
+            replacement = run_ov_condition(
+                condition, formal_identity=changed, **arguments
+            )
+
+            self.assertEqual(first.run_dir, resumed.run_dir)
+            self.assertNotEqual(first.run_dir, replacement.run_dir)
+            manifest = json.loads((first.run_dir / "run_manifest.json").read_text())
+            self.assertEqual(manifest["formal_identity"], formal_identity)
+            self.assertEqual(
+                manifest["registration_identity"]["formal_identity"], formal_identity
+            )
+
+    def test_formal_identity_is_validated_before_run_directory_creation(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            condition, executable, vocabulary = self.make_ov_fixture(root)
+            incomplete = {
+                "study_id": "ovorb2_p05_baseline_noninferiority_v2",
+                "block_id": "tiny-rep-23011",
+                "implementation": "candidate",
+                "protocol_manifest_sha256": "a" * 64,
+            }
+            with self.assertRaisesRegex(ValueError, "formal identity"):
+                run_ov_condition(
+                    condition,
+                    mode="baseline",
+                    executable=executable,
+                    vocabulary=vocabulary,
+                    output_root=root / "runs",
+                    compatibility_commit="baseline-commit",
+                    producer_commit="b" * 40,
+                    study="ovorb2_p05_baseline_noninferiority_v2",
+                    formal_identity=incomplete,
+                )
+            self.assertFalse((root / "runs").exists())
+
+    def test_formal_identity_and_v2_study_are_required_together(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            condition, executable, vocabulary = self.make_ov_fixture(root)
+            producer = "b" * 40
+            formal_identity = {
+                "study_id": "ovorb2_p05_baseline_noninferiority_v2",
+                "block_id": "tiny-rep-23011",
+                "implementation": "candidate",
+                "protocol_manifest_sha256": "a" * 64,
+                "candidate_registration_commit": producer,
+            }
+            shared = dict(
+                mode="baseline",
+                executable=executable,
+                vocabulary=vocabulary,
+                output_root=root / "runs",
+                compatibility_commit="baseline-commit",
+                producer_commit=producer,
+            )
+            with self.assertRaisesRegex(ValueError, "formal identity requires"):
+                run_ov_condition(
+                    condition,
+                    study="equivalence",
+                    formal_identity=formal_identity,
+                    **shared,
+                )
+            with self.assertRaisesRegex(ValueError, "requires a formal identity"):
+                run_ov_condition(
+                    condition,
+                    study="ovorb2_p05_baseline_noninferiority_v2",
+                    **shared,
+                )
 
     def test_semantic_runner_passes_independent_trusted_cache_identity(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

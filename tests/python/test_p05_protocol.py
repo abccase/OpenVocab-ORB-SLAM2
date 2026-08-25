@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 
 from semantic_py.openvocab_slam.p05_protocol import (
+    STUDY_ID,
     expected_blocks,
     load_protocol,
     sha256_file,
@@ -12,7 +13,7 @@ from semantic_py.openvocab_slam.p05_protocol import (
 
 
 ROOT = Path(__file__).resolve().parents[2]
-PROTOCOL_PATH = ROOT / "config/P05_BASELINE_NONINFERIORITY_V2.json"
+PROTOCOL_PATH = ROOT / "config/P05_BASELINE_NONINFERIORITY_V3.json"
 EXPERIMENT_PATH = ROOT / "config/EXPERIMENT_MANIFEST.yaml"
 ORACLE_COMMIT = "58014b7c1f2b73427b67b4e80a8cf334127f48ea"
 
@@ -98,6 +99,7 @@ class P05ProtocolTests(unittest.TestCase):
             (("statistics", "quantile_method"), "nearest", "statistics"),
             (("statistics", "pose_delta_lower_margin"), -0.09, "statistics"),
             (("statistics", "ate_geometric_ratio_upper_margin"), 1.24, "statistics"),
+            (("metrics", "oracle_telemetry_timestamp_tolerance_seconds"), 0.0, "metrics"),
         )
         for keys, replacement, message in cases:
             with self.subTest(keys=keys):
@@ -146,7 +148,7 @@ class P05ProtocolTests(unittest.TestCase):
         registration = {
             "schema_version": 1,
             "state": "REGISTERED",
-            "study_id": "ovorb2_p05_baseline_noninferiority_v2",
+            "study_id": STUDY_ID,
             "protocol_manifest_sha256": protocol_sha256,
             "candidate_policy": "HEAD_AT_REGISTRATION",
             "oracle": {

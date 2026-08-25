@@ -1,0 +1,868 @@
+{
+  "blocks": [
+    {
+      "block_id": "fr1_desk-rep-23011",
+      "execution_order": [
+        "oracle",
+        "candidate"
+      ],
+      "repetition_id": 23011,
+      "sequence_id": "fr1_desk"
+    },
+    {
+      "block_id": "fr1_desk-rep-23012",
+      "execution_order": [
+        "oracle",
+        "candidate"
+      ],
+      "repetition_id": 23012,
+      "sequence_id": "fr1_desk"
+    },
+    {
+      "block_id": "fr1_desk-rep-23013",
+      "execution_order": [
+        "oracle",
+        "candidate"
+      ],
+      "repetition_id": 23013,
+      "sequence_id": "fr1_desk"
+    },
+    {
+      "block_id": "fr1_desk-rep-23014",
+      "execution_order": [
+        "candidate",
+        "oracle"
+      ],
+      "repetition_id": 23014,
+      "sequence_id": "fr1_desk"
+    },
+    {
+      "block_id": "fr1_desk-rep-23015",
+      "execution_order": [
+        "candidate",
+        "oracle"
+      ],
+      "repetition_id": 23015,
+      "sequence_id": "fr1_desk"
+    },
+    {
+      "block_id": "fr1_desk-rep-23016",
+      "execution_order": [
+        "oracle",
+        "candidate"
+      ],
+      "repetition_id": 23016,
+      "sequence_id": "fr1_desk"
+    },
+    {
+      "block_id": "fr1_desk-rep-23017",
+      "execution_order": [
+        "oracle",
+        "candidate"
+      ],
+      "repetition_id": 23017,
+      "sequence_id": "fr1_desk"
+    },
+    {
+      "block_id": "fr1_desk-rep-23018",
+      "execution_order": [
+        "candidate",
+        "oracle"
+      ],
+      "repetition_id": 23018,
+      "sequence_id": "fr1_desk"
+    },
+    {
+      "block_id": "fr1_desk-rep-23019",
+      "execution_order": [
+        "candidate",
+        "oracle"
+      ],
+      "repetition_id": 23019,
+      "sequence_id": "fr1_desk"
+    },
+    {
+      "block_id": "fr1_desk-rep-23020",
+      "execution_order": [
+        "oracle",
+        "candidate"
+      ],
+      "repetition_id": 23020,
+      "sequence_id": "fr1_desk"
+    },
+    {
+      "block_id": "fr1_desk-rep-23021",
+      "execution_order": [
+        "candidate",
+        "oracle"
+      ],
+      "repetition_id": 23021,
+      "sequence_id": "fr1_desk"
+    },
+    {
+      "block_id": "fr1_desk-rep-23022",
+      "execution_order": [
+        "oracle",
+        "candidate"
+      ],
+      "repetition_id": 23022,
+      "sequence_id": "fr1_desk"
+    },
+    {
+      "block_id": "fr1_desk-rep-23023",
+      "execution_order": [
+        "candidate",
+        "oracle"
+      ],
+      "repetition_id": 23023,
+      "sequence_id": "fr1_desk"
+    },
+    {
+      "block_id": "fr1_desk-rep-23024",
+      "execution_order": [
+        "candidate",
+        "oracle"
+      ],
+      "repetition_id": 23024,
+      "sequence_id": "fr1_desk"
+    },
+    {
+      "block_id": "fr1_desk-rep-23025",
+      "execution_order": [
+        "candidate",
+        "oracle"
+      ],
+      "repetition_id": 23025,
+      "sequence_id": "fr1_desk"
+    },
+    {
+      "block_id": "fr1_room-rep-23011",
+      "execution_order": [
+        "oracle",
+        "candidate"
+      ],
+      "repetition_id": 23011,
+      "sequence_id": "fr1_room"
+    },
+    {
+      "block_id": "fr1_room-rep-23012",
+      "execution_order": [
+        "candidate",
+        "oracle"
+      ],
+      "repetition_id": 23012,
+      "sequence_id": "fr1_room"
+    },
+    {
+      "block_id": "fr1_room-rep-23013",
+      "execution_order": [
+        "candidate",
+        "oracle"
+      ],
+      "repetition_id": 23013,
+      "sequence_id": "fr1_room"
+    },
+    {
+      "block_id": "fr1_room-rep-23014",
+      "execution_order": [
+        "oracle",
+        "candidate"
+      ],
+      "repetition_id": 23014,
+      "sequence_id": "fr1_room"
+    },
+    {
+      "block_id": "fr1_room-rep-23015",
+      "execution_order": [
+        "oracle",
+        "candidate"
+      ],
+      "repetition_id": 23015,
+      "sequence_id": "fr1_room"
+    },
+    {
+      "block_id": "fr1_room-rep-23016",
+      "execution_order": [
+        "oracle",
+        "candidate"
+      ],
+      "repetition_id": 23016,
+      "sequence_id": "fr1_room"
+    },
+    {
+      "block_id": "fr1_room-rep-23017",
+      "execution_order": [
+        "candidate",
+        "oracle"
+      ],
+      "repetition_id": 23017,
+      "sequence_id": "fr1_room"
+    },
+    {
+      "block_id": "fr1_room-rep-23018",
+      "execution_order": [
+        "candidate",
+        "oracle"
+      ],
+      "repetition_id": 23018,
+      "sequence_id": "fr1_room"
+    },
+    {
+      "block_id": "fr1_room-rep-23019",
+      "execution_order": [
+        "oracle",
+        "candidate"
+      ],
+      "repetition_id": 23019,
+      "sequence_id": "fr1_room"
+    },
+    {
+      "block_id": "fr1_room-rep-23020",
+      "execution_order": [
+        "candidate",
+        "oracle"
+      ],
+      "repetition_id": 23020,
+      "sequence_id": "fr1_room"
+    },
+    {
+      "block_id": "fr1_room-rep-23021",
+      "execution_order": [
+        "oracle",
+        "candidate"
+      ],
+      "repetition_id": 23021,
+      "sequence_id": "fr1_room"
+    },
+    {
+      "block_id": "fr1_room-rep-23022",
+      "execution_order": [
+        "oracle",
+        "candidate"
+      ],
+      "repetition_id": 23022,
+      "sequence_id": "fr1_room"
+    },
+    {
+      "block_id": "fr1_room-rep-23023",
+      "execution_order": [
+        "oracle",
+        "candidate"
+      ],
+      "repetition_id": 23023,
+      "sequence_id": "fr1_room"
+    },
+    {
+      "block_id": "fr1_room-rep-23024",
+      "execution_order": [
+        "candidate",
+        "oracle"
+      ],
+      "repetition_id": 23024,
+      "sequence_id": "fr1_room"
+    },
+    {
+      "block_id": "fr1_room-rep-23025",
+      "execution_order": [
+        "candidate",
+        "oracle"
+      ],
+      "repetition_id": 23025,
+      "sequence_id": "fr1_room"
+    },
+    {
+      "block_id": "fr3_sitting_xyz-rep-23011",
+      "execution_order": [
+        "candidate",
+        "oracle"
+      ],
+      "repetition_id": 23011,
+      "sequence_id": "fr3_sitting_xyz"
+    },
+    {
+      "block_id": "fr3_sitting_xyz-rep-23012",
+      "execution_order": [
+        "oracle",
+        "candidate"
+      ],
+      "repetition_id": 23012,
+      "sequence_id": "fr3_sitting_xyz"
+    },
+    {
+      "block_id": "fr3_sitting_xyz-rep-23013",
+      "execution_order": [
+        "oracle",
+        "candidate"
+      ],
+      "repetition_id": 23013,
+      "sequence_id": "fr3_sitting_xyz"
+    },
+    {
+      "block_id": "fr3_sitting_xyz-rep-23014",
+      "execution_order": [
+        "oracle",
+        "candidate"
+      ],
+      "repetition_id": 23014,
+      "sequence_id": "fr3_sitting_xyz"
+    },
+    {
+      "block_id": "fr3_sitting_xyz-rep-23015",
+      "execution_order": [
+        "candidate",
+        "oracle"
+      ],
+      "repetition_id": 23015,
+      "sequence_id": "fr3_sitting_xyz"
+    },
+    {
+      "block_id": "fr3_sitting_xyz-rep-23016",
+      "execution_order": [
+        "candidate",
+        "oracle"
+      ],
+      "repetition_id": 23016,
+      "sequence_id": "fr3_sitting_xyz"
+    },
+    {
+      "block_id": "fr3_sitting_xyz-rep-23017",
+      "execution_order": [
+        "candidate",
+        "oracle"
+      ],
+      "repetition_id": 23017,
+      "sequence_id": "fr3_sitting_xyz"
+    },
+    {
+      "block_id": "fr3_sitting_xyz-rep-23018",
+      "execution_order": [
+        "candidate",
+        "oracle"
+      ],
+      "repetition_id": 23018,
+      "sequence_id": "fr3_sitting_xyz"
+    },
+    {
+      "block_id": "fr3_sitting_xyz-rep-23019",
+      "execution_order": [
+        "oracle",
+        "candidate"
+      ],
+      "repetition_id": 23019,
+      "sequence_id": "fr3_sitting_xyz"
+    },
+    {
+      "block_id": "fr3_sitting_xyz-rep-23020",
+      "execution_order": [
+        "candidate",
+        "oracle"
+      ],
+      "repetition_id": 23020,
+      "sequence_id": "fr3_sitting_xyz"
+    },
+    {
+      "block_id": "fr3_sitting_xyz-rep-23021",
+      "execution_order": [
+        "oracle",
+        "candidate"
+      ],
+      "repetition_id": 23021,
+      "sequence_id": "fr3_sitting_xyz"
+    },
+    {
+      "block_id": "fr3_sitting_xyz-rep-23022",
+      "execution_order": [
+        "candidate",
+        "oracle"
+      ],
+      "repetition_id": 23022,
+      "sequence_id": "fr3_sitting_xyz"
+    },
+    {
+      "block_id": "fr3_sitting_xyz-rep-23023",
+      "execution_order": [
+        "candidate",
+        "oracle"
+      ],
+      "repetition_id": 23023,
+      "sequence_id": "fr3_sitting_xyz"
+    },
+    {
+      "block_id": "fr3_sitting_xyz-rep-23024",
+      "execution_order": [
+        "oracle",
+        "candidate"
+      ],
+      "repetition_id": 23024,
+      "sequence_id": "fr3_sitting_xyz"
+    },
+    {
+      "block_id": "fr3_sitting_xyz-rep-23025",
+      "execution_order": [
+        "oracle",
+        "candidate"
+      ],
+      "repetition_id": 23025,
+      "sequence_id": "fr3_sitting_xyz"
+    },
+    {
+      "block_id": "fr3_sitting_halfsphere-rep-23011",
+      "execution_order": [
+        "candidate",
+        "oracle"
+      ],
+      "repetition_id": 23011,
+      "sequence_id": "fr3_sitting_halfsphere"
+    },
+    {
+      "block_id": "fr3_sitting_halfsphere-rep-23012",
+      "execution_order": [
+        "candidate",
+        "oracle"
+      ],
+      "repetition_id": 23012,
+      "sequence_id": "fr3_sitting_halfsphere"
+    },
+    {
+      "block_id": "fr3_sitting_halfsphere-rep-23013",
+      "execution_order": [
+        "oracle",
+        "candidate"
+      ],
+      "repetition_id": 23013,
+      "sequence_id": "fr3_sitting_halfsphere"
+    },
+    {
+      "block_id": "fr3_sitting_halfsphere-rep-23014",
+      "execution_order": [
+        "oracle",
+        "candidate"
+      ],
+      "repetition_id": 23014,
+      "sequence_id": "fr3_sitting_halfsphere"
+    },
+    {
+      "block_id": "fr3_sitting_halfsphere-rep-23015",
+      "execution_order": [
+        "candidate",
+        "oracle"
+      ],
+      "repetition_id": 23015,
+      "sequence_id": "fr3_sitting_halfsphere"
+    },
+    {
+      "block_id": "fr3_sitting_halfsphere-rep-23016",
+      "execution_order": [
+        "candidate",
+        "oracle"
+      ],
+      "repetition_id": 23016,
+      "sequence_id": "fr3_sitting_halfsphere"
+    },
+    {
+      "block_id": "fr3_sitting_halfsphere-rep-23017",
+      "execution_order": [
+        "oracle",
+        "candidate"
+      ],
+      "repetition_id": 23017,
+      "sequence_id": "fr3_sitting_halfsphere"
+    },
+    {
+      "block_id": "fr3_sitting_halfsphere-rep-23018",
+      "execution_order": [
+        "candidate",
+        "oracle"
+      ],
+      "repetition_id": 23018,
+      "sequence_id": "fr3_sitting_halfsphere"
+    },
+    {
+      "block_id": "fr3_sitting_halfsphere-rep-23019",
+      "execution_order": [
+        "oracle",
+        "candidate"
+      ],
+      "repetition_id": 23019,
+      "sequence_id": "fr3_sitting_halfsphere"
+    },
+    {
+      "block_id": "fr3_sitting_halfsphere-rep-23020",
+      "execution_order": [
+        "candidate",
+        "oracle"
+      ],
+      "repetition_id": 23020,
+      "sequence_id": "fr3_sitting_halfsphere"
+    },
+    {
+      "block_id": "fr3_sitting_halfsphere-rep-23021",
+      "execution_order": [
+        "oracle",
+        "candidate"
+      ],
+      "repetition_id": 23021,
+      "sequence_id": "fr3_sitting_halfsphere"
+    },
+    {
+      "block_id": "fr3_sitting_halfsphere-rep-23022",
+      "execution_order": [
+        "oracle",
+        "candidate"
+      ],
+      "repetition_id": 23022,
+      "sequence_id": "fr3_sitting_halfsphere"
+    },
+    {
+      "block_id": "fr3_sitting_halfsphere-rep-23023",
+      "execution_order": [
+        "oracle",
+        "candidate"
+      ],
+      "repetition_id": 23023,
+      "sequence_id": "fr3_sitting_halfsphere"
+    },
+    {
+      "block_id": "fr3_sitting_halfsphere-rep-23024",
+      "execution_order": [
+        "candidate",
+        "oracle"
+      ],
+      "repetition_id": 23024,
+      "sequence_id": "fr3_sitting_halfsphere"
+    },
+    {
+      "block_id": "fr3_sitting_halfsphere-rep-23025",
+      "execution_order": [
+        "candidate",
+        "oracle"
+      ],
+      "repetition_id": 23025,
+      "sequence_id": "fr3_sitting_halfsphere"
+    },
+    {
+      "block_id": "fr3_walking_xyz-rep-23011",
+      "execution_order": [
+        "oracle",
+        "candidate"
+      ],
+      "repetition_id": 23011,
+      "sequence_id": "fr3_walking_xyz"
+    },
+    {
+      "block_id": "fr3_walking_xyz-rep-23012",
+      "execution_order": [
+        "candidate",
+        "oracle"
+      ],
+      "repetition_id": 23012,
+      "sequence_id": "fr3_walking_xyz"
+    },
+    {
+      "block_id": "fr3_walking_xyz-rep-23013",
+      "execution_order": [
+        "oracle",
+        "candidate"
+      ],
+      "repetition_id": 23013,
+      "sequence_id": "fr3_walking_xyz"
+    },
+    {
+      "block_id": "fr3_walking_xyz-rep-23014",
+      "execution_order": [
+        "oracle",
+        "candidate"
+      ],
+      "repetition_id": 23014,
+      "sequence_id": "fr3_walking_xyz"
+    },
+    {
+      "block_id": "fr3_walking_xyz-rep-23015",
+      "execution_order": [
+        "oracle",
+        "candidate"
+      ],
+      "repetition_id": 23015,
+      "sequence_id": "fr3_walking_xyz"
+    },
+    {
+      "block_id": "fr3_walking_xyz-rep-23016",
+      "execution_order": [
+        "candidate",
+        "oracle"
+      ],
+      "repetition_id": 23016,
+      "sequence_id": "fr3_walking_xyz"
+    },
+    {
+      "block_id": "fr3_walking_xyz-rep-23017",
+      "execution_order": [
+        "candidate",
+        "oracle"
+      ],
+      "repetition_id": 23017,
+      "sequence_id": "fr3_walking_xyz"
+    },
+    {
+      "block_id": "fr3_walking_xyz-rep-23018",
+      "execution_order": [
+        "oracle",
+        "candidate"
+      ],
+      "repetition_id": 23018,
+      "sequence_id": "fr3_walking_xyz"
+    },
+    {
+      "block_id": "fr3_walking_xyz-rep-23019",
+      "execution_order": [
+        "candidate",
+        "oracle"
+      ],
+      "repetition_id": 23019,
+      "sequence_id": "fr3_walking_xyz"
+    },
+    {
+      "block_id": "fr3_walking_xyz-rep-23020",
+      "execution_order": [
+        "candidate",
+        "oracle"
+      ],
+      "repetition_id": 23020,
+      "sequence_id": "fr3_walking_xyz"
+    },
+    {
+      "block_id": "fr3_walking_xyz-rep-23021",
+      "execution_order": [
+        "candidate",
+        "oracle"
+      ],
+      "repetition_id": 23021,
+      "sequence_id": "fr3_walking_xyz"
+    },
+    {
+      "block_id": "fr3_walking_xyz-rep-23022",
+      "execution_order": [
+        "oracle",
+        "candidate"
+      ],
+      "repetition_id": 23022,
+      "sequence_id": "fr3_walking_xyz"
+    },
+    {
+      "block_id": "fr3_walking_xyz-rep-23023",
+      "execution_order": [
+        "candidate",
+        "oracle"
+      ],
+      "repetition_id": 23023,
+      "sequence_id": "fr3_walking_xyz"
+    },
+    {
+      "block_id": "fr3_walking_xyz-rep-23024",
+      "execution_order": [
+        "oracle",
+        "candidate"
+      ],
+      "repetition_id": 23024,
+      "sequence_id": "fr3_walking_xyz"
+    },
+    {
+      "block_id": "fr3_walking_xyz-rep-23025",
+      "execution_order": [
+        "oracle",
+        "candidate"
+      ],
+      "repetition_id": 23025,
+      "sequence_id": "fr3_walking_xyz"
+    },
+    {
+      "block_id": "fr3_walking_halfsphere-rep-23011",
+      "execution_order": [
+        "oracle",
+        "candidate"
+      ],
+      "repetition_id": 23011,
+      "sequence_id": "fr3_walking_halfsphere"
+    },
+    {
+      "block_id": "fr3_walking_halfsphere-rep-23012",
+      "execution_order": [
+        "oracle",
+        "candidate"
+      ],
+      "repetition_id": 23012,
+      "sequence_id": "fr3_walking_halfsphere"
+    },
+    {
+      "block_id": "fr3_walking_halfsphere-rep-23013",
+      "execution_order": [
+        "candidate",
+        "oracle"
+      ],
+      "repetition_id": 23013,
+      "sequence_id": "fr3_walking_halfsphere"
+    },
+    {
+      "block_id": "fr3_walking_halfsphere-rep-23014",
+      "execution_order": [
+        "candidate",
+        "oracle"
+      ],
+      "repetition_id": 23014,
+      "sequence_id": "fr3_walking_halfsphere"
+    },
+    {
+      "block_id": "fr3_walking_halfsphere-rep-23015",
+      "execution_order": [
+        "oracle",
+        "candidate"
+      ],
+      "repetition_id": 23015,
+      "sequence_id": "fr3_walking_halfsphere"
+    },
+    {
+      "block_id": "fr3_walking_halfsphere-rep-23016",
+      "execution_order": [
+        "candidate",
+        "oracle"
+      ],
+      "repetition_id": 23016,
+      "sequence_id": "fr3_walking_halfsphere"
+    },
+    {
+      "block_id": "fr3_walking_halfsphere-rep-23017",
+      "execution_order": [
+        "candidate",
+        "oracle"
+      ],
+      "repetition_id": 23017,
+      "sequence_id": "fr3_walking_halfsphere"
+    },
+    {
+      "block_id": "fr3_walking_halfsphere-rep-23018",
+      "execution_order": [
+        "oracle",
+        "candidate"
+      ],
+      "repetition_id": 23018,
+      "sequence_id": "fr3_walking_halfsphere"
+    },
+    {
+      "block_id": "fr3_walking_halfsphere-rep-23019",
+      "execution_order": [
+        "oracle",
+        "candidate"
+      ],
+      "repetition_id": 23019,
+      "sequence_id": "fr3_walking_halfsphere"
+    },
+    {
+      "block_id": "fr3_walking_halfsphere-rep-23020",
+      "execution_order": [
+        "candidate",
+        "oracle"
+      ],
+      "repetition_id": 23020,
+      "sequence_id": "fr3_walking_halfsphere"
+    },
+    {
+      "block_id": "fr3_walking_halfsphere-rep-23021",
+      "execution_order": [
+        "oracle",
+        "candidate"
+      ],
+      "repetition_id": 23021,
+      "sequence_id": "fr3_walking_halfsphere"
+    },
+    {
+      "block_id": "fr3_walking_halfsphere-rep-23022",
+      "execution_order": [
+        "oracle",
+        "candidate"
+      ],
+      "repetition_id": 23022,
+      "sequence_id": "fr3_walking_halfsphere"
+    },
+    {
+      "block_id": "fr3_walking_halfsphere-rep-23023",
+      "execution_order": [
+        "candidate",
+        "oracle"
+      ],
+      "repetition_id": 23023,
+      "sequence_id": "fr3_walking_halfsphere"
+    },
+    {
+      "block_id": "fr3_walking_halfsphere-rep-23024",
+      "execution_order": [
+        "candidate",
+        "oracle"
+      ],
+      "repetition_id": 23024,
+      "sequence_id": "fr3_walking_halfsphere"
+    },
+    {
+      "block_id": "fr3_walking_halfsphere-rep-23025",
+      "execution_order": [
+        "candidate",
+        "oracle"
+      ],
+      "repetition_id": 23025,
+      "sequence_id": "fr3_walking_halfsphere"
+    }
+  ],
+  "candidate": {
+    "producer_policy": "HEAD_AT_REGISTRATION"
+  },
+  "experiment_manifest": "config/EXPERIMENT_MANIFEST.yaml",
+  "metrics": {
+    "ate_log_ratio": "log_candidate_ate_over_oracle_ate",
+    "oracle_telemetry_timestamp_tolerance_seconds": 1e-05,
+    "pose_delta": "candidate_valid_pose_fraction_minus_oracle",
+    "scale_alignment": false,
+    "timestamp_association_max_seconds": 0.02,
+    "trajectory_alignment": "SE3"
+  },
+  "oracle": {
+    "producer_commit": "58014b7c1f2b73427b67b4e80a8cf334127f48ea"
+  },
+  "repetition_ids": [
+    23011,
+    23012,
+    23013,
+    23014,
+    23015,
+    23016,
+    23017,
+    23018,
+    23019,
+    23020,
+    23021,
+    23022,
+    23023,
+    23024,
+    23025
+  ],
+  "schema_version": 1,
+  "sequence_ids": [
+    "fr1_desk",
+    "fr1_room",
+    "fr3_sitting_xyz",
+    "fr3_sitting_halfsphere",
+    "fr3_walking_xyz",
+    "fr3_walking_halfsphere"
+  ],
+  "statistics": {
+    "algorithm": "paired_bootstrap",
+    "ate_geometric_ratio_upper_margin": 1.25,
+    "confidence_level_one_sided": 0.95,
+    "generator": "PCG64",
+    "generator_scope": "reinitialize_per_sequence",
+    "pose_delta_lower_margin": -0.1,
+    "quantile_method": "linear",
+    "resamples": 100000,
+    "seed": 23010,
+    "shared_index_matrix_for_metrics": true
+  },
+  "study_id": "ovorb2_p05_baseline_noninferiority_v3"
+}

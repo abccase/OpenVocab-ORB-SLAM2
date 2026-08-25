@@ -18,7 +18,12 @@ from semantic_py.openvocab_slam.p05_protocol import (
     sha256_file,
 )
 from tools.run_p05_baseline_noninferiority import expected_conditions, register_batch
-from tools.verify_baseline_noninferiority import build_report, main
+from tools.verify_baseline_noninferiority import (
+    _candidate_pose_fraction,
+    _oracle_pose_fraction,
+    build_report,
+    main,
+)
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -38,14 +43,14 @@ class P05VerifierTests(unittest.TestCase):
         self.repository.mkdir()
         (self.repository / "config").mkdir()
         shutil.copyfile(
-            ROOT / "config/P05_BASELINE_NONINFERIORITY_V2.json",
-            self.repository / "config/P05_BASELINE_NONINFERIORITY_V2.json",
+            ROOT / "config/P05_BASELINE_NONINFERIORITY_V3.json",
+            self.repository / "config/P05_BASELINE_NONINFERIORITY_V3.json",
         )
         shutil.copyfile(
             ROOT / "config/EXPERIMENT_MANIFEST.yaml",
             self.repository / "config/EXPERIMENT_MANIFEST.yaml",
         )
-        self.protocol_path = self.repository / "config/P05_BASELINE_NONINFERIORITY_V2.json"
+        self.protocol_path = self.repository / "config/P05_BASELINE_NONINFERIORITY_V3.json"
         self.experiment_path = self.repository / "config/EXPERIMENT_MANIFEST.yaml"
         self.protocol = load_protocol(self.protocol_path, self.experiment_path)
         experiment = json.loads(self.experiment_path.read_text(encoding="utf-8"))
@@ -126,7 +131,7 @@ class P05VerifierTests(unittest.TestCase):
             ["git", "commit", "-q", "-m", "fixture"],
             cwd=self.repository, check=True,
         )
-        self.run_root = self.repository / "runs/p05-baseline-noninferiority-v2"
+        self.run_root = self.repository / "runs/p05-baseline-noninferiority-v3"
         self.registration_path = self.run_root / "batch_registration.json"
         self.registry_path = self.repository / "runs/registry.jsonl"
         self.registration = register_batch(
@@ -385,6 +390,60 @@ class P05VerifierTests(unittest.TestCase):
             "--repository", str(self.repository),
             "--output", str(self.output_path),
         ]
+
+    def test_oracle_timestamp_accepts_frozen_legacy_rounding_bound(self) -> None:
+        telemetry = self.repository / "oracle_rounding.jsonl"
+        telemetry.write_text(json.dumps({
+            "frame_index": 0,
+            "timestamp": 1.000005,
+            "tracking_state": 2,
+            "pose_valid": True,
+            "tracking_time_seconds": 0.01,
+        }) + "\n", encoding="utf-8")
+        self.assertEqual(
+            _oracle_pose_fraction(telemetry, [1.0000101], 1e-5),
+            1.0,
+        )
+
+    def test_oracle_timestamp_rejects_value_beyond_frozen_bound(self) -> None:
+        telemetry = self.repository / "oracle_out_of_bound.jsonl"
+        telemetry.write_text(json.dumps({
+            "frame_index": 0,
+            "timestamp": 1.000011,
+            "tracking_state": 2,
+            "pose_valid": True,
+            "tracking_time_seconds": 0.01,
+        }) + "\n", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "timestamp differs"):
+            _oracle_pose_fraction(telemetry, [1.0], 1e-5)
+
+    def test_candidate_timestamp_remains_exact(self) -> None:
+        telemetry = self.repository / "candidate_inexact.csv"
+        buffer = io.StringIO(newline="")
+        writer = csv.DictWriter(
+            buffer, fieldnames=TELEMETRY_HEADER, lineterminator="\n"
+        )
+        writer.writeheader()
+        writer.writerow({
+            "frame_index": "0",
+            "timestamp": "1.0000001",
+            "tracking_state": "2",
+            "pose_valid": "1",
+            "tracking_time_seconds": "0.01",
+            "raw_keypoints": "100",
+            "used_keypoints": "100",
+            "removed_dynamic": "0",
+            "retained_uncertain": "0",
+            "removed_uncertain": "0",
+            "semantic_accessed": "0",
+            "semantic_state": "BASELINE",
+            "cache_load_seconds": "0.0",
+            "policy_seconds": "0.0",
+            "pacing_lateness_seconds": "0.0",
+        })
+        telemetry.write_text(buffer.getvalue(), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "timestamp differs"):
+            _candidate_pose_fraction(telemetry, [1.0])
 
     def test_complete_synthetic_study_passes_and_records_tool_identity(self) -> None:
         self.make_complete_study()

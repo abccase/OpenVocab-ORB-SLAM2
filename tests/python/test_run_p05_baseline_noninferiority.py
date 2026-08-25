@@ -36,14 +36,14 @@ class P05FormalRunnerTests(unittest.TestCase):
         self.repository.mkdir()
         (self.repository / "config").mkdir()
         shutil.copyfile(
-            ROOT / "config/P05_BASELINE_NONINFERIORITY_V2.json",
-            self.repository / "config/P05_BASELINE_NONINFERIORITY_V2.json",
+            ROOT / "config/P05_BASELINE_NONINFERIORITY_V3.json",
+            self.repository / "config/P05_BASELINE_NONINFERIORITY_V3.json",
         )
         shutil.copyfile(
             ROOT / "config/EXPERIMENT_MANIFEST.yaml",
             self.repository / "config/EXPERIMENT_MANIFEST.yaml",
         )
-        self.protocol_path = self.repository / "config/P05_BASELINE_NONINFERIORITY_V2.json"
+        self.protocol_path = self.repository / "config/P05_BASELINE_NONINFERIORITY_V3.json"
         self.experiment_path = self.repository / "config/EXPERIMENT_MANIFEST.yaml"
         self.protocol = load_protocol(self.protocol_path, self.experiment_path)
         experiment = json.loads(self.experiment_path.read_text(encoding="utf-8"))
@@ -124,7 +124,7 @@ class P05FormalRunnerTests(unittest.TestCase):
         self.candidate_commit = subprocess.check_output(
             ["git", "rev-parse", "HEAD"], cwd=self.repository, text=True
         ).strip()
-        self.run_root = self.repository / "runs/p05-baseline-noninferiority-v2"
+        self.run_root = self.repository / "runs/p05-baseline-noninferiority-v3"
         self.registration_path = self.run_root / "batch_registration.json"
         self.registry_path = self.repository / "runs/registry.jsonl"
 

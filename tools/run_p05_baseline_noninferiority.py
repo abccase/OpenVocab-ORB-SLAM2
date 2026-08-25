@@ -315,7 +315,7 @@ def register_batch(
         Path(registry_path),
         {
             "schema_version": 1,
-            "kind": "p05_baseline_noninferiority_v2_batch",
+            "kind": "p05_baseline_noninferiority_v3_batch",
             "state": "REGISTERED",
             "study_id": STUDY_ID,
             "registered_utc": registered_utc,

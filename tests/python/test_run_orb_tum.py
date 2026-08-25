@@ -83,7 +83,7 @@ class OracleRunnerTests(unittest.TestCase):
             root = Path(temporary)
             condition, executable, vocabulary = self.make_fixture(root)
             formal_identity = {
-                "study_id": "ovorb2_p05_baseline_noninferiority_v2",
+                "study_id": "ovorb2_p05_baseline_noninferiority_v3",
                 "block_id": "tiny-rep-23011",
                 "implementation": "oracle",
                 "protocol_manifest_sha256": "a" * 64,
@@ -95,7 +95,7 @@ class OracleRunnerTests(unittest.TestCase):
                 output_root=root / "runs",
                 compatibility_commit="baseline-commit",
                 producer_commit="58014b7c1f2b73427b67b4e80a8cf334127f48ea",
-                study="ovorb2_p05_baseline_noninferiority_v2",
+                study="ovorb2_p05_baseline_noninferiority_v3",
             )
             first = run_baseline_condition(
                 condition, formal_identity=formal_identity, **arguments
@@ -237,7 +237,7 @@ class OracleRunnerTests(unittest.TestCase):
             condition, executable, vocabulary = self.make_ov_fixture(root)
             producer = "b" * 40
             formal_identity = {
-                "study_id": "ovorb2_p05_baseline_noninferiority_v2",
+                "study_id": "ovorb2_p05_baseline_noninferiority_v3",
                 "block_id": "tiny-rep-23011",
                 "implementation": "candidate",
                 "protocol_manifest_sha256": "a" * 64,
@@ -250,7 +250,7 @@ class OracleRunnerTests(unittest.TestCase):
                 output_root=root / "runs",
                 compatibility_commit="baseline-commit",
                 producer_commit=producer,
-                study="ovorb2_p05_baseline_noninferiority_v2",
+                study="ovorb2_p05_baseline_noninferiority_v3",
             )
             first = run_ov_condition(
                 condition, formal_identity=formal_identity, **arguments
@@ -276,7 +276,7 @@ class OracleRunnerTests(unittest.TestCase):
             root = Path(temporary)
             condition, executable, vocabulary = self.make_ov_fixture(root)
             incomplete = {
-                "study_id": "ovorb2_p05_baseline_noninferiority_v2",
+                "study_id": "ovorb2_p05_baseline_noninferiority_v3",
                 "block_id": "tiny-rep-23011",
                 "implementation": "candidate",
                 "protocol_manifest_sha256": "a" * 64,
@@ -290,18 +290,18 @@ class OracleRunnerTests(unittest.TestCase):
                     output_root=root / "runs",
                     compatibility_commit="baseline-commit",
                     producer_commit="b" * 40,
-                    study="ovorb2_p05_baseline_noninferiority_v2",
+                    study="ovorb2_p05_baseline_noninferiority_v3",
                     formal_identity=incomplete,
                 )
             self.assertFalse((root / "runs").exists())
 
-    def test_formal_identity_and_v2_study_are_required_together(self) -> None:
+    def test_formal_identity_and_v3_study_are_required_together(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             condition, executable, vocabulary = self.make_ov_fixture(root)
             producer = "b" * 40
             formal_identity = {
-                "study_id": "ovorb2_p05_baseline_noninferiority_v2",
+                "study_id": "ovorb2_p05_baseline_noninferiority_v3",
                 "block_id": "tiny-rep-23011",
                 "implementation": "candidate",
                 "protocol_manifest_sha256": "a" * 64,
@@ -325,7 +325,7 @@ class OracleRunnerTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "requires a formal identity"):
                 run_ov_condition(
                     condition,
-                    study="ovorb2_p05_baseline_noninferiority_v2",
+                    study="ovorb2_p05_baseline_noninferiority_v3",
                     **shared,
                 )
 

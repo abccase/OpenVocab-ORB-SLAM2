@@ -194,7 +194,11 @@ def _association_timestamps(path: Path) -> list[float]:
     return values
 
 
-def _oracle_pose_fraction(path: Path, timestamps: list[float]) -> float:
+def _oracle_pose_fraction(
+    path: Path,
+    timestamps: list[float],
+    timestamp_tolerance_seconds: float,
+) -> float:
     rows = []
     for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
         try:
@@ -209,7 +213,11 @@ def _oracle_pose_fraction(path: Path, timestamps: list[float]) -> float:
         }
         if not required <= row.keys() or row["frame_index"] != len(rows):
             raise ValueError("oracle telemetry is incomplete or non-contiguous")
-        if float(row["timestamp"]) != timestamps[len(rows)]:
+        timestamp = float(row["timestamp"])
+        if (
+            not math.isfinite(timestamp)
+            or abs(timestamp - timestamps[len(rows)]) > timestamp_tolerance_seconds
+        ):
             raise ValueError("oracle telemetry timestamp differs from association")
         tracking_time = float(row["tracking_time_seconds"])
         if not math.isfinite(tracking_time) or tracking_time < 0:
@@ -311,6 +319,7 @@ def _measure_run(
     manifest: Mapping[str, object],
     registration: Mapping[str, object],
     condition: Mapping[str, object],
+    oracle_timestamp_tolerance_seconds: float,
 ) -> dict[str, object]:
     sequence_id = str(condition["sequence_id"])
     repetition_id = int(condition["repetition_id"])
@@ -371,7 +380,11 @@ def _measure_run(
         valid_fraction = _candidate_pose_fraction(telemetry_path, timestamps)
         _validate_candidate_sidecars(run_dir, manifest, len(timestamps))
     else:
-        valid_fraction = _oracle_pose_fraction(telemetry_path, timestamps)
+        valid_fraction = _oracle_pose_fraction(
+            telemetry_path,
+            timestamps,
+            oracle_timestamp_tolerance_seconds,
+        )
     return {
         "sequence_id": sequence_id,
         "repetition_id": repetition_id,
@@ -538,6 +551,9 @@ def build_report(
         repository_root, data_root, data_manifest_root,
     )
     audits = _validate_audits(audit_root, registration, repository_root)
+    oracle_timestamp_tolerance_seconds = float(
+        protocol["metrics"]["oracle_telemetry_timestamp_tolerance_seconds"]
+    )
 
     measured: list[dict[str, object]] = []
     grouped: dict[str, tuple[list[dict[str, object]], list[dict[str, object]]]] = {
@@ -553,7 +569,13 @@ def build_report(
         run_dir, manifest = _completed_expected_attempt(
             condition_root, registration, condition
         )
-        row = _measure_run(run_dir, manifest, registration, condition)
+        row = _measure_run(
+            run_dir,
+            manifest,
+            registration,
+            condition,
+            oracle_timestamp_tolerance_seconds,
+        )
         measured.append(row)
         target = grouped[str(condition["sequence_id"])][
             0 if implementation == "oracle" else 1

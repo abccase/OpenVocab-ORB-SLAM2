@@ -1,4 +1,4 @@
-"""Frozen protocol identities for the P05 baseline noninferiority study."""
+"""Frozen protocol identities for the P05 V3 baseline noninferiority study."""
 
 from __future__ import annotations
 
@@ -9,9 +9,10 @@ from collections.abc import Mapping
 from pathlib import Path
 
 
-STUDY_ID = "ovorb2_p05_baseline_noninferiority_v2"
+STUDY_ID = "ovorb2_p05_baseline_noninferiority_v3"
 ORACLE_COMMIT = "58014b7c1f2b73427b67b4e80a8cf334127f48ea"
 CANDIDATE_POLICY = "HEAD_AT_REGISTRATION"
+ORACLE_TELEMETRY_TIMESTAMP_TOLERANCE_SECONDS = 1e-5
 SEQUENCE_IDS = (
     "fr1_desk",
     "fr1_room",
@@ -39,6 +40,9 @@ EXPECTED_STATISTICS = {
 EXPECTED_METRICS = {
     "pose_delta": "candidate_valid_pose_fraction_minus_oracle",
     "ate_log_ratio": "log_candidate_ate_over_oracle_ate",
+    "oracle_telemetry_timestamp_tolerance_seconds": (
+        ORACLE_TELEMETRY_TIMESTAMP_TOLERANCE_SECONDS
+    ),
     "trajectory_alignment": "SE3",
     "scale_alignment": False,
     "timestamp_association_max_seconds": 0.02,

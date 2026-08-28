@@ -114,6 +114,9 @@ class InferenceAdapterTests(unittest.TestCase):
 
                 return torch.from_numpy(logits), None, None
 
+            def reset_image(self):
+                self.reset_called = True
+
         image = np.zeros((2, 2, 3), dtype=np.uint8)
         predictor = FakePredictor()
         observed = SamSegmenter(predictor).predict_masks(
@@ -126,6 +129,7 @@ class InferenceAdapterTests(unittest.TestCase):
         self.assertEqual(tuple(predictor.kwargs["boxes"].shape), (2, 4))
         self.assertFalse(predictor.kwargs["multimask_output"])
         self.assertTrue(predictor.kwargs["return_logits"])
+        self.assertTrue(predictor.reset_called)
         self.assertEqual(observed.shape, (2, 2, 2))
         np.testing.assert_allclose(observed[0, 0, 0], 0.5, atol=1e-6)
         self.assertGreater(observed[0, 0, 1], 0.5)
@@ -158,6 +162,28 @@ class InferenceAdapterTests(unittest.TestCase):
         self.assertEqual([item.score for item in output], [0.9, 0.8])
         self.assertEqual(int(decode_binary_mask_rle(output[0].mask_rle).sum()), 16)
         self.assertEqual(int(decode_binary_mask_rle(output[1].mask_rle).sum()), 8)
+
+    def test_low_vram_hook_runs_after_detection_and_before_segmentation(self) -> None:
+        events: list[str] = []
+        detector = FakeDetector()
+        original_predict = detector.predict
+        detector.predict = lambda *args: (
+            events.append("detect"), original_predict(*args)
+        )[1]
+        segmenter = FakeSegmenter()
+        original_masks = segmenter.predict_masks
+        segmenter.predict_masks = lambda *args: (
+            events.append("segment"), original_masks(*args)
+        )[1]
+        cfg = InferenceConfig("ovorb.semantic-cache.v1", 800, 0.35, 0.25, 0.5)
+
+        infer_instances(
+            np.zeros((4, 8, 3), dtype=np.uint8), FORMAL_PROMPT,
+            ModelBundle(detector, segmenter), cfg,
+            before_segmentation=lambda _models: events.append("release-detector"),
+        )
+
+        self.assertEqual(events, ["detect", "release-detector", "segment"])
 
     def test_inference_rejects_wrong_image_and_segmenter_shape(self) -> None:
         cfg = InferenceConfig("ovorb.semantic-cache.v1", 800, 0.35, 0.25, 0.5)

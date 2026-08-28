@@ -14,7 +14,10 @@ FrameTelemetry::FrameTelemetry()
     : raw_keypoints(0), used_keypoints(0), removed_dynamic(0),
       retained_uncertain(0), removed_uncertain(0), semantic_accessed(false),
       semantic_state(SemanticState::BASELINE), cache_load_seconds(0.0),
-      policy_seconds(0.0), pacing_lateness_seconds(0.0) {}
+      policy_seconds(0.0), pacing_lateness_seconds(0.0), ipc_call_seconds(0.0),
+      ipc_reason("NOT_APPLICABLE"), request_attempted(false), request_sent(false),
+      packet_age_ms(-1.0), inference_ms(-1.0), strong_track_count(0),
+      unconfirmed_track_count(0) {}
 
 PacingDecision decidePacing(double interval_seconds, double elapsed_seconds) {
     if (!std::isfinite(interval_seconds) || interval_seconds < 0.0 ||
@@ -40,7 +43,9 @@ std::string telemetryCsvHeader() {
     return "frame_index,timestamp,tracking_state,pose_valid,tracking_time_seconds,"
            "raw_keypoints,used_keypoints,removed_dynamic,retained_uncertain,"
            "removed_uncertain,semantic_accessed,semantic_state,cache_load_seconds,"
-           "policy_seconds,pacing_lateness_seconds";
+           "policy_seconds,pacing_lateness_seconds,ipc_call_seconds,ipc_reason,"
+           "request_attempted,request_sent,packet_age_ms,inference_ms,"
+           "strong_track_count,unconfirmed_track_count";
 }
 
 std::string formatTelemetryCsv(std::size_t frame_index, double timestamp,
@@ -57,7 +62,11 @@ std::string formatTelemetryCsv(std::size_t frame_index, double timestamp,
            << (telemetry.semantic_accessed ? 1 : 0) << ','
            << semanticStateName(telemetry.semantic_state) << ','
            << telemetry.cache_load_seconds << ',' << telemetry.policy_seconds << ','
-           << telemetry.pacing_lateness_seconds;
+           << telemetry.pacing_lateness_seconds << ',' << telemetry.ipc_call_seconds << ','
+           << telemetry.ipc_reason << ',' << (telemetry.request_attempted ? 1 : 0) << ','
+           << (telemetry.request_sent ? 1 : 0) << ',' << telemetry.packet_age_ms << ','
+           << telemetry.inference_ms << ',' << telemetry.strong_track_count << ','
+           << telemetry.unconfirmed_track_count;
     return output.str();
 }
 

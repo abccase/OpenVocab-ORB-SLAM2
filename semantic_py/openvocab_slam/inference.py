@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from contextlib import nullcontext
 import math
 import re
 
@@ -57,30 +58,40 @@ class GroundingDinoDetector:
 class SamSegmenter:
     """Batch box-prompt adapter around the pinned SAM predictor."""
 
-    def __init__(self, predictor):
+    def __init__(self, predictor, *, use_autocast=False):
         self.predictor = predictor
+        self.use_autocast = bool(use_autocast)
 
     def predict_masks(self, image_bgr, boxes_xyxy):
         import torch
 
         image = np.asarray(image_bgr)
-        self.predictor.set_image(image, image_format="BGR")
-        boxes = torch.as_tensor(
-            np.asarray(boxes_xyxy, dtype=np.float32),
-            dtype=torch.float32,
-            device=self.predictor.device,
+        autocast = (
+            torch.autocast(device_type="cuda", dtype=torch.float16)
+            if self.use_autocast and str(self.predictor.device).startswith("cuda")
+            else nullcontext()
         )
-        transformed = self.predictor.transform.apply_boxes_torch(boxes, image.shape[:2])
-        logits, _, _ = self.predictor.predict_torch(
-            point_coords=None,
-            point_labels=None,
-            boxes=transformed,
-            mask_input=None,
-            multimask_output=False,
-            return_logits=True,
-        )
-        probabilities = torch.sigmoid(logits[:, 0])
-        return probabilities.detach().cpu().numpy()
+        try:
+            with autocast:
+                self.predictor.set_image(image, image_format="BGR")
+                boxes = torch.as_tensor(
+                    np.asarray(boxes_xyxy, dtype=np.float32),
+                    dtype=torch.float32,
+                    device=self.predictor.device,
+                )
+                transformed = self.predictor.transform.apply_boxes_torch(boxes, image.shape[:2])
+                logits, _, _ = self.predictor.predict_torch(
+                    point_coords=None,
+                    point_labels=None,
+                    boxes=transformed,
+                    mask_input=None,
+                    multimask_output=False,
+                    return_logits=True,
+                )
+                probabilities = torch.sigmoid(logits[:, 0])
+            return probabilities.detach().cpu().numpy()
+        finally:
+            self.predictor.reset_image()
 
 
 def load_model_bundle(
@@ -113,7 +124,7 @@ def load_model_bundle(
     )
 
 
-def infer_instances(image_bgr, prompt, models, cfg):
+def infer_instances(image_bgr, prompt, models, cfg, *, before_segmentation=None):
     image = np.asarray(image_bgr)
     if image.ndim != 3 or image.shape[2] != 3 or image.dtype != np.uint8:
         raise ValueError("image_bgr must be an HxWx3 uint8 array")
@@ -124,6 +135,8 @@ def infer_instances(image_bgr, prompt, models, cfg):
         cfg.box_threshold,
         cfg.text_threshold,
     )
+    if before_segmentation is not None:
+        before_segmentation(models)
     survivors: list[tuple[tuple[float, float, float, float], float, str]] = []
     for prediction in predictions:
         score = float(prediction["score"])

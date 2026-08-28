@@ -44,6 +44,8 @@ endif()
 
 find_package(Eigen3 3.1.0 REQUIRED)
 find_package(OpenSSL REQUIRED)
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(ZMQ REQUIRED libzmq)
 if(ORB_SLAM2_BUILD_VIEWER)
    find_package(Pangolin REQUIRED)
 endif()
@@ -53,6 +55,7 @@ ${PROJECT_SOURCE_DIR}
 ${PROJECT_SOURCE_DIR}/include
 ${EIGEN3_INCLUDE_DIR}
 ${OpenCV_INCLUDE_DIRS}
+${ZMQ_INCLUDE_DIRS}
 )
 
 if(ORB_SLAM2_BUILD_VIEWER)
@@ -82,6 +85,8 @@ src/Initializer.cc
 src/semantic/FeatureMaskPolicy.cc
 src/semantic/CacheMaskProvider.cc
 src/semantic/Telemetry.cc
+src/semantic/IpcMaskProvider.cc
+src/semantic/OnlineDynamicState.cc
 )
 
 if(ORB_SLAM2_BUILD_VIEWER)
@@ -104,6 +109,7 @@ ${EIGEN3_LIBS}
 ${PROJECT_SOURCE_DIR}/Thirdparty/DBoW2/lib/libDBoW2.so
 ${PROJECT_SOURCE_DIR}/Thirdparty/g2o/lib/libg2o.so
 OpenSSL::Crypto
+${ZMQ_LIBRARIES}
 )
 
 if(ORB_SLAM2_BUILD_VIEWER)
@@ -132,6 +138,16 @@ if(BUILD_TESTING)
    add_executable(test_cache_mask_provider tests/cpp/test_cache_mask_provider.cc)
    target_link_libraries(test_cache_mask_provider ${PROJECT_NAME} GTest::gtest_main)
    add_test(NAME cache_mask_provider COMMAND test_cache_mask_provider)
+   add_executable(test_ipc_mask_provider tests/cpp/test_ipc_mask_provider.cc)
+   target_compile_definitions(test_ipc_mask_provider PRIVATE
+      IPC_FIXTURE_DIR="${PROJECT_SOURCE_DIR}/tests/fixtures/ipc_packets")
+   target_link_libraries(test_ipc_mask_provider ${PROJECT_NAME} GTest::gtest_main)
+   add_test(NAME ipc_mask_provider COMMAND test_ipc_mask_provider)
+   add_executable(test_online_dynamic_state tests/cpp/test_online_dynamic_state.cc)
+   target_compile_definitions(test_online_dynamic_state PRIVATE
+      IPC_FIXTURE_DIR="${PROJECT_SOURCE_DIR}/tests/fixtures/ipc_packets")
+   target_link_libraries(test_online_dynamic_state ${PROJECT_NAME} GTest::gtest_main)
+   add_test(NAME online_dynamic_state COMMAND test_online_dynamic_state)
 endif()
 
 # Build examples
@@ -145,6 +161,10 @@ target_link_libraries(rgbd_tum ${PROJECT_NAME})
 add_executable(rgbd_tum_ov
 Examples/RGB-D/rgbd_tum_ov.cc)
 target_link_libraries(rgbd_tum_ov ${PROJECT_NAME})
+
+add_executable(rgbd_tum_online
+Examples/RGB-D/rgbd_tum_online.cc)
+target_link_libraries(rgbd_tum_online ${PROJECT_NAME})
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/Examples/Stereo)
 

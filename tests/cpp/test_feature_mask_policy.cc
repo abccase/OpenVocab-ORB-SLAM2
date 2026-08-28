@@ -45,18 +45,34 @@ TEST(TelemetryCsv, RoundTripsRealTumTimestampAndAllDoubleFields) {
     telemetry.cache_load_seconds = 0.023456789012345678;
     telemetry.policy_seconds = 0.034567890123456789;
     telemetry.pacing_lateness_seconds = 0.045678901234567891;
+    telemetry.ipc_call_seconds = 0.0012345678901234567;
+    telemetry.ipc_reason = "NO_PACKET";
+    telemetry.request_attempted = true;
+    telemetry.request_sent = false;
+    telemetry.packet_age_ms = 200.0;
+    telemetry.inference_ms = 45.0;
+    telemetry.strong_track_count = 2;
+    telemetry.unconfirmed_track_count = 1;
     const std::string csv = ORB_SLAM2::semantic::formatTelemetryCsv(
         0, timestamp, 2, true, tracking, telemetry);
     std::vector<std::string> fields;
     std::istringstream stream(csv);
     std::string field;
     while (std::getline(stream, field, ',')) fields.push_back(field);
-    ASSERT_EQ(15u, fields.size());
+    ASSERT_EQ(23u, fields.size());
     EXPECT_EQ(timestamp, std::stod(fields[1]));
     EXPECT_EQ(tracking, std::stod(fields[4]));
     EXPECT_EQ(telemetry.cache_load_seconds, std::stod(fields[12]));
     EXPECT_EQ(telemetry.policy_seconds, std::stod(fields[13]));
     EXPECT_EQ(telemetry.pacing_lateness_seconds, std::stod(fields[14]));
+    EXPECT_EQ(telemetry.ipc_call_seconds, std::stod(fields[15]));
+    EXPECT_EQ("NO_PACKET", fields[16]);
+    EXPECT_EQ("1", fields[17]);
+    EXPECT_EQ("0", fields[18]);
+    EXPECT_EQ(telemetry.packet_age_ms, std::stod(fields[19]));
+    EXPECT_EQ(telemetry.inference_ms, std::stod(fields[20]));
+    EXPECT_EQ("2", fields[21]);
+    EXPECT_EQ("1", fields[22]);
 }
 
 TEST(FeatureMaskPolicy, UncertainDecisionIsStableAndSequenceBound) {

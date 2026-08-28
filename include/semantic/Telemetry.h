@@ -27,6 +27,14 @@ struct FrameTelemetry {
     double cache_load_seconds;
     double policy_seconds;
     double pacing_lateness_seconds;
+    double ipc_call_seconds;
+    std::string ipc_reason;
+    bool request_attempted;
+    bool request_sent;
+    double packet_age_ms;
+    double inference_ms;
+    std::size_t strong_track_count;
+    std::size_t unconfirmed_track_count;
 };
 
 struct PacingDecision {

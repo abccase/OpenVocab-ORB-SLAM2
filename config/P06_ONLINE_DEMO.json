@@ -1,0 +1,8 @@
+{
+  "ipc_watchdog_ms": 10.0,
+  "max_mask_age_ms": 250,
+  "prompt_set_id": "tum_office_v1",
+  "request_rate_cap_hz": 5.0,
+  "schema_version": 1,
+  "sequence_id": "fr3_walking_xyz"
+}

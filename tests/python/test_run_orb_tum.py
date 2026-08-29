@@ -192,14 +192,17 @@ class OracleRunnerTests(unittest.TestCase):
                 header = ('frame_index,timestamp,tracking_state,pose_valid,tracking_time_seconds,'
                           'raw_keypoints,used_keypoints,removed_dynamic,retained_uncertain,'
                           'removed_uncertain,semantic_accessed,semantic_state,cache_load_seconds,'
-                          'policy_seconds,pacing_lateness_seconds')
+                          'policy_seconds,pacing_lateness_seconds,ipc_call_seconds,ipc_reason,'
+                          'request_attempted,request_sent,packet_age_ms,inference_ms,'
+                          'strong_track_count,unconfirmed_track_count')
                 semantic = mode == 'semantic-feedback'
                 state = 'CACHE_VALID' if semantic else 'BASELINE'
                 used = 90 if semantic else 100
                 removed = 10 if semantic else 0
                 Path('frame_telemetry.csv').write_text(
                     header + '\\n' + f'0,1.0,2,1,0.01,100,{used},{removed},0,0,{int(semantic)},{state},' +
-                    ('0.001,0.002,0\\n' if semantic else '0,0,0\\n'))
+                    ('0.001,0.002,0' if semantic else '0,0,0') +
+                    ',0,NOT_APPLICABLE,0,0,-1,-1,0,0\\n')
                 Path('timings.json').write_text(json.dumps({'frame_count': 1, 'mean_tracking_seconds': 0.01,
                     'median_tracking_seconds': 0.01, 'mean_pacing_lateness_seconds': 0,
                     'max_pacing_lateness_seconds': 0, 'wall_seconds': 0.01}))
@@ -454,8 +457,11 @@ class OracleRunnerTests(unittest.TestCase):
             header = ("frame_index,timestamp,tracking_state,pose_valid,tracking_time_seconds,"
                       "raw_keypoints,used_keypoints,removed_dynamic,retained_uncertain,"
                       "removed_uncertain,semantic_accessed,semantic_state,cache_load_seconds,"
-                      "policy_seconds,pacing_lateness_seconds\n")
-            valid = "0,1.0,2,1,0.01,100,100,0,0,0,0,BASELINE,0,0,0\n"
+                      "policy_seconds,pacing_lateness_seconds,ipc_call_seconds,ipc_reason,"
+                      "request_attempted,request_sent,packet_age_ms,inference_ms,"
+                      "strong_track_count,unconfirmed_track_count\n")
+            valid = ("0,1.0,2,1,0.01,100,100,0,0,0,0,BASELINE,0,0,0,"
+                     "0,NOT_APPLICABLE,0,0,-1,-1,0,0\n")
             path.write_text(header + valid, encoding="utf-8")
             self.assertEqual(_validate_ov_telemetry(path, 1, "baseline", ["1.0"]), 1)
             for broken in (
@@ -464,6 +470,7 @@ class OracleRunnerTests(unittest.TestCase):
                 valid.replace("0,1.0,", "0,1.1,"),
                 valid.replace(",100,100,0,0,0,", ",100,99,0,100,1,"),
                 valid.replace(",BASELINE,0,0,0", ",BASELINE,0.001,0,0"),
+                valid.replace(",NOT_APPLICABLE,0,0,", ",NOT_APPLICABLE,1,0,"),
             ):
                 path.write_text(header + broken, encoding="utf-8")
                 with self.assertRaises(ValueError):
@@ -475,8 +482,11 @@ class OracleRunnerTests(unittest.TestCase):
             header = ("frame_index,timestamp,tracking_state,pose_valid,tracking_time_seconds,"
                       "raw_keypoints,used_keypoints,removed_dynamic,retained_uncertain,"
                       "removed_uncertain,semantic_accessed,semantic_state,cache_load_seconds,"
-                      "policy_seconds,pacing_lateness_seconds\n")
-            suffix = ",2,1,0.01,100,100,0,0,0,0,BASELINE,0,0,0\n"
+                      "policy_seconds,pacing_lateness_seconds,ipc_call_seconds,ipc_reason,"
+                      "request_attempted,request_sent,packet_age_ms,inference_ms,"
+                      "strong_track_count,unconfirmed_track_count\n")
+            suffix = (",2,1,0.01,100,100,0,0,0,0,BASELINE,0,0,0,"
+                      "0,NOT_APPLICABLE,0,0,-1,-1,0,0\n")
             path.write_text(header + "0,1341845820.751833" + suffix, encoding="utf-8")
             self.assertEqual(_validate_ov_telemetry(
                 path, 1, "baseline", ["1341845820.751833"]), 1)

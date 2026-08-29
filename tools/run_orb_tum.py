@@ -211,6 +211,9 @@ _OV_TELEMETRY_FIELDS = [
     "removed_dynamic", "retained_uncertain", "removed_uncertain",
     "semantic_accessed", "semantic_state", "cache_load_seconds",
     "policy_seconds", "pacing_lateness_seconds",
+    "ipc_call_seconds", "ipc_reason", "request_attempted", "request_sent",
+    "packet_age_ms", "inference_ms", "strong_track_count",
+    "unconfirmed_track_count",
 ]
 
 
@@ -245,7 +248,7 @@ def _validate_ov_telemetry(path: Path, expected_frames: int, mode: str,
         numeric = [
             float(row["timestamp"]), float(row["tracking_time_seconds"]),
             float(row["cache_load_seconds"]), float(row["policy_seconds"]),
-            float(row["pacing_lateness_seconds"]),
+            float(row["pacing_lateness_seconds"]), float(row["ipc_call_seconds"]),
         ]
         counts = [
             _canonical_int(row["raw_keypoints"], "raw_keypoints"),
@@ -258,6 +261,18 @@ def _validate_ov_telemetry(path: Path, expected_frames: int, mode: str,
             raise ValueError(f"{path}: invalid timing value")
         if not math.isfinite(numeric[0]) or any(value < 0 for value in counts):
             raise ValueError(f"{path}: invalid telemetry value")
+        offline_counts = [
+            _canonical_int(row["request_attempted"], "request_attempted"),
+            _canonical_int(row["request_sent"], "request_sent"),
+            _canonical_int(row["strong_track_count"], "strong_track_count"),
+            _canonical_int(row["unconfirmed_track_count"], "unconfirmed_track_count"),
+        ]
+        packet_age_ms = float(row["packet_age_ms"])
+        inference_ms = float(row["inference_ms"])
+        if (numeric[5] != 0.0 or row["ipc_reason"] != "NOT_APPLICABLE" or
+                offline_counts != [0, 0, 0, 0] or
+                packet_age_ms != -1.0 or inference_ms != -1.0):
+            raise ValueError(f"{path}: offline run accessed online IPC state")
         if counts[1] + counts[2] + counts[4] != counts[0]:
             raise ValueError(f"{path}: feature accounting invariant failed")
         if counts[3] > counts[1]:

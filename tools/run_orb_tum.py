@@ -23,6 +23,7 @@ if str(REPOSITORY_ROOT) not in sys.path:
     sys.path.insert(0, str(REPOSITORY_ROOT))
 
 from semantic_py.openvocab_slam.p05_protocol import ORACLE_COMMIT, STUDY_ID
+from semantic_py.openvocab_slam.experiments import STUDY_ID as P08_STUDY_ID
 
 
 @dataclass(frozen=True)
@@ -73,10 +74,31 @@ def _validated_formal_identity(
     condition: RunCondition,
     expected_implementation: str,
     producer_commit: str,
+    expected_mode: str | None = None,
 ) -> dict[str, object] | None:
     if value is None:
         return None
     copied = dict(value)
+    if copied.get("study_id") == P08_STUDY_ID:
+        expected_fields = {
+            "study_id", "block_id", "mode", "protocol_manifest_sha256",
+            "run_order_sha256", "producer_commit",
+        }
+        if set(copied) != expected_fields:
+            raise ValueError("P08 formal identity has unexpected or missing fields")
+        if expected_implementation != "candidate":
+            raise ValueError("P08 formal identity requires the dual-mode candidate")
+        if copied.get("block_id") != f"{condition.sequence_id}-seed-{condition.seed}":
+            raise ValueError("P08 formal identity has wrong block")
+        if expected_mode is None or copied.get("mode") != expected_mode:
+            raise ValueError("P08 formal identity has wrong mode")
+        if not _is_sha256(copied.get("protocol_manifest_sha256")):
+            raise ValueError("P08 formal identity has invalid protocol hash")
+        if not _is_sha256(copied.get("run_order_sha256")):
+            raise ValueError("P08 formal identity has invalid run-order hash")
+        if copied.get("producer_commit") != producer_commit or not _is_commit(producer_commit):
+            raise ValueError("P08 formal identity has invalid producer commit")
+        return copied
     common = {
         "study_id", "block_id", "implementation",
         "protocol_manifest_sha256",
@@ -650,18 +672,21 @@ def run_ov_condition(
 ) -> RunResult:
     if mode not in {"baseline", "semantic-feedback"}:
         raise ValueError(f"unsupported ORB-SLAM2 mode: {mode}")
-    if study not in {"equivalence", "smoke", STUDY_ID}:
+    if study not in {"equivalence", "smoke", STUDY_ID, P08_STUDY_ID}:
         raise ValueError(f"unsupported semantic integration study: {study}")
     validated_formal_identity = _validated_formal_identity(
         formal_identity,
         condition=condition,
         expected_implementation="candidate",
         producer_commit=producer_commit,
+        expected_mode=mode,
     )
-    if validated_formal_identity is not None and study != STUDY_ID:
-        raise ValueError("formal identity requires the P05 V2 study")
-    if study == STUDY_ID and validated_formal_identity is None:
-        raise ValueError("P05 V2 study requires a formal identity")
+    formal_study = (validated_formal_identity.get("study_id")
+                    if validated_formal_identity is not None else None)
+    if formal_study is not None and study != formal_study:
+        raise ValueError("formal identity requires its matching study")
+    if study in {STUDY_ID, P08_STUDY_ID} and validated_formal_identity is None:
+        raise ValueError("formal study requires a formal identity")
     if mode == "baseline":
         if cache_root is not None or cache_identity is not None:
             raise ValueError("baseline mode must not receive semantic cache assets")

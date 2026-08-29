@@ -41,3 +41,11 @@ def test_reproduction_uses_declared_asset_environment_when_available(tmp_path: P
     python.write_text("", encoding="utf-8")
 
     assert module.resolve_python(tmp_path) == python
+
+
+def test_reproduction_uses_the_project_fresh_build_entrypoint() -> None:
+    module = load_reproduction_module()
+
+    assert module.fresh_build_command(REPOSITORY_ROOT, REPOSITORY_ROOT / "unused") == [
+        "bash", str(REPOSITORY_ROOT / "build.sh")
+    ]

@@ -60,6 +60,12 @@ def resolve_python(asset_root: Path) -> Path:
     return declared if declared.is_file() else Path(sys.executable)
 
 
+def fresh_build_command(repository_root: Path, build_dir: Path) -> list[str]:
+    """Use the project entrypoint because it builds generated g2o headers too."""
+    del build_dir  # build.sh owns a complete isolated in-tree build graph.
+    return ["bash", str(repository_root / "build.sh")]
+
+
 def sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -237,9 +243,7 @@ def run_reproduction(repository_root: Path, asset_root: Path, output_root: Path,
     stages.append({"name": "preflight", "ok": True, "asset_root": str(asset_root), "repository_root": str(repository_root), "no_download_path": True})
     if smoke:
         build_dir = build_dir.resolve()
-        stages.append(_command_stage("build-configure", ["cmake", "-S", str(repository_root), "-B", str(build_dir)], repository_root, output_root))
-        if stages[-1]["ok"]:
-            stages.append(_command_stage("build", ["cmake", "--build", str(build_dir), "-j2"], repository_root, output_root))
+        stages.append(_command_stage("build", fresh_build_command(repository_root, build_dir), repository_root, output_root))
         if not stages[-1]["ok"]:
             raise ValueError(f"build failed; see {stages[-1]['log']}")
         stages.append(_command_stage("unit", [str(python), "-m", "pytest", "tests/python", "-q"], repository_root, output_root))
@@ -260,9 +264,7 @@ def run_reproduction(repository_root: Path, asset_root: Path, output_root: Path,
     maps = _validate_maps(asset_root, repository_root, output_root)
     stages.append({"name": "map-validate", "ok": True, "facts": maps})
     expected = load_reproduction_plan().stages
-    actual = ["build" if stage["name"] == "build-configure" else stage["name"] for stage in stages if stage["name"] in expected or stage["name"] == "build-configure"]
-    # The emitted stage names preserve the contract while build-configure is a
-    # subcommand recorded in the build stage's log.
+    actual = [stage["name"] for stage in stages if stage["name"] in expected]
     return {"schema_version": 1, "created_utc": _utc_now(), "repository_commit": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repository_root, text=True).strip(), "asset_root": str(asset_root), "stages": stages, "contract_stages": expected, "contract_observed": actual, "valid": True}
 
 

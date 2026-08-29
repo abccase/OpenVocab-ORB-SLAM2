@@ -59,3 +59,14 @@ def test_timestamp_association_over_20ms_is_rejected() -> None:
     estimate = [_pose(0.021, (0.0, 0.0, 0.0)), _pose(1.021, (1.0, 0.0, 0.0)), _pose(2.021, (2.0, 0.0, 0.0))]
     with pytest.raises(ValueError, match="associated poses"):
         compute_trajectory_metrics(groundtruth, estimate)
+
+
+def test_published_tum_quaternion_rounding_is_normalized() -> None:
+    groundtruth = [
+        (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.9999),
+        (1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.9999),
+        (2.0, 2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.9999),
+    ]
+    estimate = [_pose(0.0, (0.0, 0.0, 0.0)), _pose(1.0, (1.0, 0.0, 0.0)), _pose(2.0, (2.0, 0.0, 0.0))]
+    result = compute_trajectory_metrics(groundtruth, estimate)
+    assert result["ate_translation_rmse_m"] == pytest.approx(0.0, abs=1e-12)

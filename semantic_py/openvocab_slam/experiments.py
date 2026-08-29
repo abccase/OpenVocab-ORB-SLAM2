@@ -283,7 +283,7 @@ def _validated_trajectory(rows: Sequence[Sequence[float]], label: str) -> list[t
         if not all(math.isfinite(value) for value in row) or row[0] <= previous:
             raise ValueError(f"{label} trajectory is non-finite or non-monotonic")
         norm = math.sqrt(sum(value * value for value in row[4:8]))
-        if abs(norm - 1.0) > 1e-5:
+        if abs(norm - 1.0) > 1e-3:
             raise ValueError(f"{label} trajectory quaternion is not normalized")
         previous = row[0]
         result.append(row)
@@ -318,6 +318,8 @@ def _associate(
 
 def _quaternion_rotation(row: Sequence[float]) -> np.ndarray:
     x, y, z, w = row[4:8]
+    norm = math.sqrt(x * x + y * y + z * z + w * w)
+    x, y, z, w = x / norm, y / norm, z / norm, w / norm
     return np.asarray(
         [
             [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],

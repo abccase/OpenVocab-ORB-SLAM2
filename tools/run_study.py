@@ -579,6 +579,8 @@ def _finalize_metric(
         })
         _write_json_atomic(manifest_path, manifest)
         valid, reason, _ = validate_attempt(Path(attempt), condition, registration)
+        if not valid:
+            terminalize_failed_validation(Path(attempt), reason)
         return valid, reason
     except (KeyError, OSError, TypeError, ValueError) as exc:
         manifest.update({"state": "FAILED", "valid": False, "invalid_reason": f"metric validation failed: {exc}"})

@@ -19,6 +19,7 @@ from semantic_py.openvocab_slam.experiments import (
 )
 from tools.run_orb_tum import RunCondition, _validated_formal_identity, run_ov_condition
 from tools.run_study import (
+    _finalize_metric,
     expected_registration_identity,
     terminalize_failed_validation,
     validate_attempt_registration_identity,
@@ -307,6 +308,43 @@ def test_failed_validation_terminalizes_without_overwriting_evidence(tmp_path: P
     assert (attempt / "run_manifest.pre_p08_validation.json").read_bytes() == original_manifest
     failure = json.loads((attempt / "p08_validation_failure.json").read_text())
     assert failure["state"] == "FAILED"
+
+
+def test_finalize_metric_terminalizes_false_validation_immediately(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    attempt = tmp_path / "attempt-001"
+    attempt.mkdir()
+    manifest_path = attempt / "run_manifest.json"
+    manifest_path.write_text(json.dumps({
+        "state": "COMPLETED",
+        "valid": True,
+        "telemetry": {"sha256": "a" * 64},
+        "expected_frames": 1,
+    }), encoding="utf-8")
+    registration = {
+        "datasets": {"fr1_desk": {"groundtruth": str(tmp_path / "groundtruth.txt")}}
+    }
+    condition = {"sequence_id": "fr1_desk"}
+    monkeypatch.setattr(
+        "tools.run_study._metric_payload",
+        lambda *_args: {"schema_version": 1, "metrics": {}},
+    )
+    monkeypatch.setattr(
+        "tools.run_study.validate_attempt",
+        lambda *_args: (False, "deterministic replay mismatch", None),
+    )
+
+    valid, reason = _finalize_metric(attempt, condition, registration)
+
+    terminal = json.loads(manifest_path.read_text())
+    assert valid is False
+    assert reason == "deterministic replay mismatch"
+    assert terminal["state"] == "FAILED"
+    assert terminal["valid"] is False
+    assert "deterministic replay mismatch" in terminal["invalid_reason"]
+    assert (attempt / "run_manifest.pre_p08_validation.json").is_file()
+    assert (attempt / "p08_validation_failure.json").is_file()
 
 
 @pytest.mark.parametrize("failure_kind", ["interrupted", "metric_tamper"])

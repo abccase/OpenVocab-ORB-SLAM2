@@ -405,6 +405,7 @@ def compute_trajectory_metrics(
         "rpe_delta_seconds": RPE_DELTA_SECONDS,
         "rpe_pair_count": len(rpe_translation),
         "rpe_translation_rmse_m": float(math.sqrt(float(np.mean(np.square(rpe_translation))))),
+        "rpe_rotation_unit": "degrees",
         "rpe_rotation_rmse_deg": float(math.sqrt(float(np.mean(np.square(rpe_rotation))))),
     }
 

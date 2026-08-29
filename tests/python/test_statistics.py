@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from semantic_py.openvocab_slam.experiments import SEEDS, SEQUENCE_IDS, paired_statistics
+from tools.analyze_study import _classification
 
 
 def _rows(delta: float = -0.02) -> list[dict[str, object]]:
@@ -49,3 +50,31 @@ def test_pairing_requires_all_frozen_sequences() -> None:
     rows = [row for row in _rows() if row["sequence_id"] != SEQUENCE_IDS[-1]]
     with pytest.raises(ValueError, match="exactly 60|sequences"):
         paired_statistics(rows)
+
+
+def _classification_fixture(overall_ci: list[float], sequence_cis: list[list[float]]) -> dict[str, object]:
+    return {
+        "overall": {"bootstrap_ci95_m": overall_ci},
+        "sequences": {
+            sequence: {
+                "median_ate_delta_m": 1.0,
+                "bootstrap_ci95_m": interval,
+            }
+            for sequence, interval in zip(SEQUENCE_IDS, sequence_cis, strict=True)
+        },
+    }
+
+
+@pytest.mark.parametrize(
+    ("overall", "sequences", "expected"),
+    [
+        ([-0.2, -0.1], [[0.1, 0.2]] * 6, "improvement"),
+        ([0.1, 0.2], [[-0.2, -0.1]] * 6, "negative"),
+        ([-0.1, 0.1], [[-0.2, 0.2]] * 6, "neutral"),
+        ([-0.1, 0.1], [[-0.2, 0.2]] * 5 + [[0.1, 0.2]], "mixed"),
+    ],
+)
+def test_classification_follows_frozen_documented_ci_rule(
+    overall: list[float], sequences: list[list[float]], expected: str
+) -> None:
+    assert _classification(_classification_fixture(overall, sequences)) == expected

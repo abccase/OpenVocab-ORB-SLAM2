@@ -70,3 +70,20 @@ def test_published_tum_quaternion_rounding_is_normalized() -> None:
     estimate = [_pose(0.0, (0.0, 0.0, 0.0)), _pose(1.0, (1.0, 0.0, 0.0)), _pose(2.0, (2.0, 0.0, 0.0))]
     result = compute_trajectory_metrics(groundtruth, estimate)
     assert result["ate_translation_rmse_m"] == pytest.approx(0.0, abs=1e-12)
+
+
+def test_one_second_rpe_reports_known_rotation_in_degrees() -> None:
+    groundtruth = [
+        _pose(0.0, (0.0, 0.0, 0.0)),
+        _pose(1.0, (1.0, 0.0, 0.0)),
+        _pose(2.0, (1.0, 1.0, 0.0)),
+    ]
+    estimate = [
+        _pose(0.0, (0.0, 0.0, 0.0), 0.0),
+        _pose(1.0, (1.0, 0.0, 0.0), math.radians(10.0)),
+        _pose(2.0, (1.0, 1.0, 0.0), math.radians(20.0)),
+    ]
+    result = compute_trajectory_metrics(groundtruth, estimate)
+    assert result["rpe_pair_count"] == 2
+    assert result["rpe_rotation_unit"] == "degrees"
+    assert result["rpe_rotation_rmse_deg"] == pytest.approx(10.0, abs=1e-8)

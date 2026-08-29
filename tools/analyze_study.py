@@ -159,11 +159,9 @@ def _classification(statistics_result: Mapping[str, object]) -> str:
     low, high = overall["bootstrap_ci95_m"]
     sequence_results = statistics_result["sequences"]
     assert isinstance(sequence_results, Mapping)
-    dynamic = [sequence_results[sequence]["median_ate_delta_m"] for sequence in SEQUENCE_IDS[2:]]
-    controls = [sequence_results[sequence]["median_ate_delta_m"] for sequence in SEQUENCE_IDS[:2]]
-    if high < 0.0 and all(value < 0.0 for value in dynamic) and all(value <= 0.0 for value in controls):
+    if high < 0.0:
         return "improvement"
-    if low > 0.0 and all(value > 0.0 for value in dynamic):
+    if low > 0.0:
         return "negative"
     if low <= 0.0 <= high and all(
         result["bootstrap_ci95_m"][0] <= 0.0 <= result["bootstrap_ci95_m"][1]

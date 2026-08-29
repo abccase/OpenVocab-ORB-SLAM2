@@ -36,6 +36,7 @@ from tools.run_orb_tum import (  # noqa: E402
     RunCondition,
     _association_timestamps,
     _completed_ov_attempt,
+    _formal_prompt_sha256,
     _validate_ov_telemetry,
     parse_trajectory,
     run_ov_condition,
@@ -145,6 +146,7 @@ def build_registration(
             "source_tree_sha256": dataset_manifest["extracted_tree_sha256"],
             "association": str(association.resolve()),
             "association_sha256": sha256_file(association),
+            "expected_frames": len(_association_timestamps(association)),
             "groundtruth": str(groundtruth.resolve()),
             "groundtruth_sha256": sha256_file(groundtruth),
             "settings": str((REPOSITORY_ROOT / "Examples" / "RGB-D" / _settings_name(manifest, sequence_id)).resolve()),
@@ -153,10 +155,14 @@ def build_registration(
             "cache_identity": cache_identity,
             "semantic_manifest": str(semantic_manifest_path.resolve()),
             "semantic_manifest_sha256": sha256_file(semantic_manifest_path),
+            "semantic_identity_sha256": dynamic_manifest["semantic_identity_sha256"],
+            "inference_config_sha256": semantic_manifest["inference_config_sha256"],
             "prompt_config": str(prompt_path.resolve()),
             "prompt_config_sha256": sha256_file(prompt_path),
             "prompt_sha256": semantic_manifest["prompt_sha256"],
             "configuration_sha256": dynamic_manifest["dynamic_config_sha256"],
+            "dynamic_schema": dynamic_manifest["schema"],
+            "semantic_schema": semantic_manifest["schema"],
         }
     return {
         "schema_version": 1,
@@ -265,6 +271,39 @@ def validate_registration_current(registration: Mapping[str, object]) -> None:
                 raise ValueError(f"registered {label} hash mismatch: {sequence_id}")
         if _cache_identity(Path(str(dataset["cache_root"]))) != dataset["cache_identity"]:
             raise ValueError(f"registered dynamic cache hash mismatch: {sequence_id}")
+        dataset_manifest = _read_json(
+            Path(str(dataset["dataset_manifest"])), "dataset manifest"
+        )
+        dynamic_manifest = _read_json(
+            Path(str(dataset["cache_root"])) / "cache_manifest.json",
+            "dynamic cache manifest",
+        )
+        semantic_manifest = _read_json(
+            Path(str(dataset["semantic_manifest"])), "semantic cache manifest"
+        )
+        expected_content = {
+            "source_tree_sha256": dataset_manifest.get("extracted_tree_sha256"),
+            "configuration_sha256": dynamic_manifest.get("dynamic_config_sha256"),
+            "semantic_manifest_sha256": dynamic_manifest.get("semantic_manifest_sha256"),
+            "semantic_identity_sha256": dynamic_manifest.get("semantic_identity_sha256"),
+            "inference_config_sha256": semantic_manifest.get("inference_config_sha256"),
+            "prompt_sha256": semantic_manifest.get("prompt_sha256"),
+            "dynamic_schema": dynamic_manifest.get("schema"),
+            "semantic_schema": semantic_manifest.get("schema"),
+        }
+        for key, expected in expected_content.items():
+            if dataset.get(key) != expected:
+                raise ValueError(
+                    f"registered {key} differs from source manifests: {sequence_id}"
+                )
+        if dataset.get("expected_frames") != len(
+            _association_timestamps(Path(str(dataset["association"])))
+        ):
+            raise ValueError(f"registered frame count mismatch: {sequence_id}")
+        if _formal_prompt_sha256(Path(str(dataset["prompt_config"]))) != dataset.get(
+            "prompt_sha256"
+        ):
+            raise ValueError(f"registered prompt config mismatch: {sequence_id}")
 
 
 def _formal_identity(condition: Mapping[str, object], registration: Mapping[str, object]) -> dict[str, object]:
@@ -276,6 +315,171 @@ def _formal_identity(condition: Mapping[str, object], registration: Mapping[str,
         "run_order_sha256": registration["run_order_sha256"],
         "producer_commit": registration["producer_commit"],
     }
+
+
+def expected_registration_identity(
+    condition: Mapping[str, object],
+    registration: Mapping[str, object],
+) -> dict[str, object]:
+    sequence = str(condition["sequence_id"])
+    mode = str(condition["mode"])
+    seed = int(condition["seed"])
+    dataset = registration["datasets"][sequence]
+    if not isinstance(dataset, Mapping):
+        raise ValueError("registered dataset identity is malformed")
+    cache_identity = dataset["cache_identity"] if mode == "semantic-feedback" else None
+    cache_root = str(dataset["cache_root"]) if cache_identity is not None else None
+    if mode == "semantic-feedback":
+        verified_inputs: dict[str, object] = {
+            "dataset_manifest_sha256": dataset["dataset_manifest_sha256"],
+            "source_tree_sha256": dataset["source_tree_sha256"],
+            "dynamic_manifest_sha256": cache_identity["manifest_sha256"],
+            "dynamic_completion_sha256": cache_identity["completion_sha256"],
+            "dynamic_index_sha256": cache_identity["index_sha256"],
+            "dynamic_config_sha256": dataset["configuration_sha256"],
+            "semantic_manifest_sha256": dataset["semantic_manifest_sha256"],
+            "semantic_identity_sha256": dataset["semantic_identity_sha256"],
+            "inference_config_sha256": dataset["inference_config_sha256"],
+            "prompt_sha256": dataset["prompt_sha256"],
+            "prompt_config_sha256": dataset["prompt_config_sha256"],
+            "protocol": {
+                "dynamic": dataset["dynamic_schema"],
+                "semantic": dataset["semantic_schema"],
+            },
+        }
+    else:
+        verified_inputs = {
+            "dataset_manifest_sha256": dataset["dataset_manifest_sha256"],
+            "source_tree_sha256": dataset["source_tree_sha256"],
+            "dynamic_manifest_sha256": None,
+            "dynamic_config_sha256": None,
+            "semantic_manifest_sha256": None,
+            "semantic_identity_sha256": None,
+            "inference_config_sha256": None,
+            "prompt_sha256": None,
+            "protocol": None,
+        }
+    command = [
+        str(registration["executable"]), str(registration["vocabulary"]),
+        str(dataset["settings"]), str(dataset["sequence_root"]),
+        str(dataset["association"]), mode, sequence, str(seed),
+    ]
+    if cache_identity is not None:
+        command.extend([
+            str(dataset["cache_root"]),
+            str(cache_identity["manifest_sha256"]),
+            str(cache_identity["completion_sha256"]),
+            str(cache_identity["index_sha256"]),
+        ])
+    return {
+        "study": STUDY_ID,
+        "mode": mode,
+        "sequence_id": sequence,
+        "seed": seed,
+        "compatibility_commit": registration["compatibility_commit"],
+        "producer_commit": registration["producer_commit"],
+        "executable": {
+            "path": str(registration["executable"]),
+            "sha256": registration["executable_sha256"],
+        },
+        "vocabulary": {
+            "path": str(registration["vocabulary"]),
+            "sha256": registration["vocabulary_sha256"],
+        },
+        "settings": {
+            "path": str(dataset["settings"]),
+            "sha256": dataset["settings_sha256"],
+        },
+        "association": {
+            "path": str(dataset["association"]),
+            "sha256": dataset["association_sha256"],
+        },
+        "dataset": {
+            "root": str(dataset["sequence_root"]),
+            "manifest_sha256": dataset["dataset_manifest_sha256"],
+        },
+        "source_tree_sha256": dataset["source_tree_sha256"],
+        "experiment_manifest_sha256": registration["experiment_manifest_sha256"],
+        "prompt_sha256": verified_inputs["prompt_sha256"],
+        "verified_inputs": verified_inputs,
+        "command": command,
+        "cache_root": cache_root,
+        "cache_identity": cache_identity,
+        "expected_frames": dataset["expected_frames"],
+        "pacing": "dataset_timestamp_paced_relative",
+        "formal_identity": _formal_identity(condition, registration),
+    }
+
+
+def validate_attempt_registration_identity(
+    manifest: Mapping[str, object],
+    condition: Mapping[str, object],
+    registration: Mapping[str, object],
+) -> dict[str, object]:
+    expected = expected_registration_identity(condition, registration)
+    if manifest.get("registration_identity") != expected:
+        raise ValueError("attempt differs from reconstructed registered identity")
+    top_level_fields = {
+        "study": expected["study"],
+        "mode": expected["mode"],
+        "sequence_id": expected["sequence_id"],
+        "seed": expected["seed"],
+        "compatibility_commit": expected["compatibility_commit"],
+        "producer_commit": expected["producer_commit"],
+        "executable": expected["executable"],
+        "vocabulary": expected["vocabulary"],
+        "settings": expected["settings"],
+        "association_sha256": expected["association"]["sha256"],
+        "dataset_manifest_sha256": expected["dataset"]["manifest_sha256"],
+        "cache_root": expected["cache_root"],
+        "cache_identity": expected["cache_identity"],
+        "verified_inputs": expected["verified_inputs"],
+        "command": expected["command"],
+        "expected_frames": expected["expected_frames"],
+        "pacing": expected["pacing"],
+        "formal_identity": expected["formal_identity"],
+    }
+    for field, value in top_level_fields.items():
+        if manifest.get(field) != value:
+            raise ValueError(f"attempt {field} differs from registered identity")
+    return expected
+
+
+def terminalize_failed_validation(attempt: Path, reason: str) -> None:
+    attempt = Path(attempt)
+    manifest_path = attempt / "run_manifest.json"
+    preserved_manifest_path = attempt / "run_manifest.pre_p08_validation.json"
+    failure_path = attempt / "p08_validation_failure.json"
+    original_hash = sha256_file(manifest_path) if manifest_path.is_file() else None
+    if manifest_path.is_file() and not preserved_manifest_path.exists():
+        temporary = attempt / f".{preserved_manifest_path.name}.partial"
+        with temporary.open("wb") as stream:
+            stream.write(manifest_path.read_bytes())
+            stream.flush()
+            os.fsync(stream.fileno())
+        temporary.replace(preserved_manifest_path)
+    failure = {
+        "schema_version": 1,
+        "state": "FAILED",
+        "valid": False,
+        "failed_utc": _utc_now(),
+        "reason": reason,
+        "original_run_manifest_sha256": original_hash,
+    }
+    if not failure_path.exists():
+        _write_json_atomic(failure_path, failure)
+    try:
+        manifest = _read_json(manifest_path, "run manifest")
+    except ValueError:
+        return
+    if manifest.get("state") == "FAILED" and manifest.get("valid") is False:
+        return
+    manifest.update({
+        "state": "FAILED",
+        "valid": False,
+        "invalid_reason": f"P08 strict validation failed: {reason}",
+    })
+    _write_json_atomic(manifest_path, manifest)
 
 
 def _parse_trajectory_file(path: Path) -> list[tuple[float, ...]]:
@@ -314,15 +518,9 @@ def validate_attempt(
         manifest = _read_json(manifest_path, "run manifest")
         sequence = str(condition["sequence_id"])
         dataset = registration["datasets"][sequence]
-        expected_identity = dict(manifest["registration_identity"])
-        if (
-            manifest.get("producer_commit") != registration.get("producer_commit")
-            or manifest.get("compatibility_commit") != registration.get("compatibility_commit")
-            or manifest.get("executable", {}).get("sha256") != registration.get("executable_sha256")
-            or manifest.get("vocabulary", {}).get("sha256") != registration.get("vocabulary_sha256")
-            or manifest.get("dataset_manifest_sha256") != dataset.get("dataset_manifest_sha256")
-        ):
-            raise ValueError("run executable/source/dataset identity mismatch")
+        expected_identity = validate_attempt_registration_identity(
+            manifest, condition, registration
+        )
         resumed = _completed_ov_attempt(
             Path(attempt), registration_identity=expected_identity,
             expected_frames=int(manifest["expected_frames"]),
@@ -427,6 +625,20 @@ def execute_registered(run_root: Path) -> dict[str, object]:
         sequence = str(condition["sequence_id"])
         mode = str(condition["mode"])
         dataset = registration["datasets"][sequence]
+        condition_root = (
+            Path(run_root) / mode / sequence / f"seed-{condition['seed']}"
+        )
+        for attempt in sorted(condition_root.glob("attempt-*")):
+            valid, reason, _ = validate_attempt(attempt, condition, registration)
+            if not valid:
+                terminalize_failed_validation(attempt, reason)
+                _append_jsonl(registry, {
+                    "kind": "p08_strict_validation",
+                    "state": "FAILED",
+                    "valid": False,
+                    "run_dir": str(attempt),
+                    "reason": reason,
+                })
         cache_identity = dict(dataset["cache_identity"]) if mode == "semantic-feedback" else None
         result = run_ov_condition(
             RunCondition(

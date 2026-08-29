@@ -1,0 +1,33 @@
+{
+  "schema": "ovorb.map-config.v1",
+  "study_id": "p07-static-map-v1",
+  "seed": 23011,
+  "tsdf": {
+    "voxel_length_m": 0.02,
+    "sdf_trunc_m": 0.08,
+    "depth_trunc_m": 5.0,
+    "dynamic_threshold": 0.7
+  },
+  "objects": {
+    "static_score_max_exclusive": 0.25,
+    "points_per_observation": 256,
+    "dbscan_eps_m": 0.1,
+    "dbscan_min_samples": 5,
+    "trim_quantile": 0.02,
+    "min_object_points": 50,
+    "max_object_points": 20000,
+    "degeneracy_ratio": 0.0001
+  },
+  "screenshots": [
+    {
+      "name": "front",
+      "elevation_degrees": 20.0,
+      "azimuth_degrees": -60.0
+    },
+    {
+      "name": "top",
+      "elevation_degrees": 90.0,
+      "azimuth_degrees": -90.0
+    }
+  ]
+}

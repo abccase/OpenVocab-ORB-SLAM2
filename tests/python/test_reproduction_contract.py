@@ -32,3 +32,12 @@ def test_reproduction_plan_requires_an_explicit_asset_root() -> None:
         assert "asset root" in str(error).lower()
     else:
         raise AssertionError("missing asset root must fail closed")
+
+
+def test_reproduction_uses_declared_asset_environment_when_available(tmp_path: Path) -> None:
+    module = load_reproduction_module()
+    python = tmp_path / "venv/semantic-gpu/bin/python"
+    python.parent.mkdir(parents=True)
+    python.write_text("", encoding="utf-8")
+
+    assert module.resolve_python(tmp_path) == python

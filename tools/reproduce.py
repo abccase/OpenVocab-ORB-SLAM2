@@ -54,6 +54,12 @@ def resolve_asset_root(value: Path | None, repository_root: Path) -> Path:
     return root
 
 
+def resolve_python(asset_root: Path) -> Path:
+    """Use the explicitly supplied semantic environment when it exists."""
+    declared = asset_root / "venv/semantic-gpu/bin/python"
+    return declared if declared.is_file() else Path(sys.executable)
+
+
 def sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -197,7 +203,7 @@ def _validate_maps(asset_root: Path, repository_root: Path, output_root: Path) -
     return facts
 
 
-def _smoke(repository_root: Path, asset_root: Path, output_root: Path) -> dict[str, Any]:
+def _smoke(repository_root: Path, asset_root: Path, output_root: Path, python: Path) -> dict[str, Any]:
     executable_baseline = repository_root / "Examples/RGB-D/rgbd_tum"
     executable_semantic = repository_root / "Examples/RGB-D/rgbd_tum_ov"
     if not executable_baseline.is_file() or not executable_semantic.is_file():
@@ -207,7 +213,7 @@ def _smoke(repository_root: Path, asset_root: Path, output_root: Path) -> dict[s
     results: dict[str, Any] = {}
     for mode, executable in (("baseline", executable_baseline), ("semantic-feedback", executable_semantic)):
         output = output_root / "smoke/runs" / mode
-        command = [sys.executable, str(repository_root / "tools/run_orb_tum.py"), "--mode", mode, "--study", "smoke", "--executable", str(executable), "--output-root", str(output), "--registry", str(registry), *common]
+        command = [str(python), str(repository_root / "tools/run_orb_tum.py"), "--mode", mode, "--study", "smoke", "--executable", str(executable), "--output-root", str(output), "--registry", str(registry), *common]
         stage = _command_stage("smoke-" + mode, command, repository_root, output_root)
         if not stage["ok"]:
             raise ValueError(f"{mode} smoke failed; see {stage['log']}")
@@ -226,6 +232,7 @@ def run_reproduction(repository_root: Path, asset_root: Path, output_root: Path,
         raise ValueError("select --validate-existing and/or --smoke")
     output_root = output_root.resolve()
     output_root.mkdir(parents=True, exist_ok=True)
+    python = resolve_python(asset_root)
     stages: list[dict[str, Any]] = []
     stages.append({"name": "preflight", "ok": True, "asset_root": str(asset_root), "repository_root": str(repository_root), "no_download_path": True})
     if smoke:
@@ -235,7 +242,7 @@ def run_reproduction(repository_root: Path, asset_root: Path, output_root: Path,
             stages.append(_command_stage("build", ["cmake", "--build", str(build_dir), "-j2"], repository_root, output_root))
         if not stages[-1]["ok"]:
             raise ValueError(f"build failed; see {stages[-1]['log']}")
-        stages.append(_command_stage("unit", [sys.executable, "-m", "pytest", "tests/python", "-q"], repository_root, output_root))
+        stages.append(_command_stage("unit", [str(python), "-m", "pytest", "tests/python", "-q"], repository_root, output_root))
         if not stages[-1]["ok"]:
             raise ValueError(f"unit tests failed; see {stages[-1]['log']}")
     else:
@@ -246,7 +253,7 @@ def run_reproduction(repository_root: Path, asset_root: Path, output_root: Path,
     stages.append({"name": "cache-validate", "ok": True, "facts": caches})
     smoke_facts: dict[str, Any] = {"status": "not requested"}
     if smoke:
-        smoke_facts = _smoke(repository_root, asset_root, output_root)
+        smoke_facts = _smoke(repository_root, asset_root, output_root, python)
     stages.append({"name": "smoke", "ok": True, "facts": smoke_facts})
     metrics = _validate_metrics(asset_root)
     stages.append({"name": "metrics", "ok": True, "facts": metrics})

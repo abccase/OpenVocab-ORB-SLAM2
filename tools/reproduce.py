@@ -19,8 +19,17 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Sequence
 
-
 REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
+if str(REPOSITORY_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPOSITORY_ROOT))
+
+from semantic_py.openvocab_slam.cache import validate_cache
+from semantic_py.openvocab_slam.dynamic_cache import hash_dataset_tree
+from semantic_py.openvocab_slam.schemas import CacheManifest
+from semantic_py.openvocab_slam.experiments import read_run_matrix
+from tools.run_study import validate_attempt
+
+
 SEQUENCES = (
     "fr1_desk", "fr1_room", "fr3_sitting_halfsphere", "fr3_sitting_xyz",
     "fr3_walking_halfsphere", "fr3_walking_xyz",
@@ -123,15 +132,46 @@ def _read_json(path: Path, label: str) -> dict[str, Any]:
     return value
 
 
+def _read_jsonl(path: Path, label: str) -> list[dict[str, Any]]:
+    try:
+        rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    except (OSError, json.JSONDecodeError) as error:
+        raise ValueError(f"invalid {label}: {path}") from error
+    if not all(isinstance(row, dict) for row in rows):
+        raise ValueError(f"invalid {label}: expected JSON objects")
+    return rows
+
+
+def validate_index_payloads(root: Path, index_path: Path, label: str) -> list[dict[str, Any]]:
+    """Validate every indexed payload, including its safe relative path and hash."""
+    rows = _read_jsonl(index_path, f"{label} index")
+    seen: set[Path] = set()
+    for row in rows:
+        relative = Path(str(row.get("path", "")))
+        expected = row.get("sha256")
+        if relative.is_absolute() or ".." in relative.parts or not relative.parts:
+            raise ValueError(f"unsafe {label} payload path: {relative}")
+        payload = root / relative
+        if payload in seen:
+            raise ValueError(f"duplicate {label} payload: {relative}")
+        seen.add(payload)
+        if not payload.is_file():
+            raise ValueError(f"missing {label} payload: {relative}")
+        if not isinstance(expected, str) or sha256_file(payload) != expected:
+            raise ValueError(f"{label} payload hash mismatch: {relative}")
+    return rows
+
+
 def _command_stage(name: str, command: Sequence[str], cwd: Path, output_root: Path) -> dict[str, Any]:
     started = _utc_now()
     completed = subprocess.run(list(command), cwd=cwd, text=True, capture_output=True, check=False)
     log = output_root / "logs" / f"{name}.log"
     log.parent.mkdir(parents=True, exist_ok=True)
-    log.write_text(
-        "$ " + " ".join(command) + "\n\n[stdout]\n" + completed.stdout +
-        "\n[stderr]\n" + completed.stderr, encoding="utf-8"
-    )
+    descriptor, temporary_name = tempfile.mkstemp(prefix=f".{name}.", suffix=".partial", dir=log.parent)
+    with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+        handle.write("$ " + " ".join(command) + "\n\n[stdout]\n" + completed.stdout + "\n[stderr]\n" + completed.stderr)
+        handle.flush(); os.fsync(handle.fileno())
+    os.replace(temporary_name, log)
     return {
         "name": name, "command": list(command), "started_utc": started,
         "ended_utc": _utc_now(), "exit_code": completed.returncode,
@@ -159,6 +199,12 @@ def _validate_data(asset_root: Path) -> dict[str, Any]:
             raise ValueError(f"dataset manifest hash mismatch: {sequence}")
         if dataset.get("sequence_id") != sequence:
             raise ValueError(f"dataset manifest sequence mismatch: {sequence}")
+        if hash_dataset_tree(sequence_root) != expected.get("source_tree_sha256"):
+            raise ValueError(f"dataset source-tree hash mismatch: {sequence}")
+        if sha256_file(association) != expected.get("association_sha256"):
+            raise ValueError(f"dataset association hash mismatch: {sequence}")
+        if sha256_file(groundtruth) != expected.get("groundtruth_sha256"):
+            raise ValueError(f"dataset groundtruth hash mismatch: {sequence}")
         facts[sequence] = {"manifest_sha256": sha256_file(manifest), "association_sha256": sha256_file(association), "groundtruth_sha256": sha256_file(groundtruth)}
     return facts
 
@@ -168,6 +214,7 @@ def _validate_caches(asset_root: Path) -> dict[str, Any]:
     for sequence in SEQUENCES:
         semantic = asset_root / "cache/semantic/v1" / sequence
         dynamic = asset_root / "cache/dynamic/v1" / sequence
+        registration_dataset = _read_json(asset_root / "runs/ovorb2_tum_v1/study_registration.json", "study registration")["datasets"][sequence]
         for root, kind in ((semantic, "semantic"), (dynamic, "dynamic")):
             manifest = _read_json(root / "cache_manifest.json", f"{kind} cache manifest {sequence}")
             completion = _read_json(root / "cache_complete.json", f"{kind} cache completion {sequence}")
@@ -178,6 +225,24 @@ def _validate_caches(asset_root: Path) -> dict[str, Any]:
                 raise ValueError(f"unbound {kind} cache completion: {sequence}")
             if completion.get("index_sha256") != sha256_file(index):
                 raise ValueError(f"unbound {kind} cache index: {sequence}")
+        semantic_manifest = CacheManifest.from_primitive(_read_json(semantic / "cache_manifest.json", "semantic cache manifest"))
+        if (semantic_manifest.source_tree_sha256 != registration_dataset["source_tree_sha256"] or
+                semantic_manifest.association_sha256 != registration_dataset["association_sha256"] or
+                semantic_manifest.prompt_sha256 != registration_dataset["prompt_sha256"]):
+            raise ValueError(f"semantic cache does not bind registration: {sequence}")
+        semantic_result = validate_cache(semantic, semantic_manifest)
+        if not semantic_result.valid:
+            raise ValueError(f"semantic packet validation failed: {sequence}: {semantic_result.errors[0]}")
+        dynamic_manifest = _read_json(dynamic / "cache_manifest.json", "dynamic cache manifest")
+        if (dynamic_manifest.get("source_tree_sha256") != registration_dataset["source_tree_sha256"] or
+                dynamic_manifest.get("association_sha256") != registration_dataset["association_sha256"] or
+                dynamic_manifest.get("semantic_manifest_sha256") != sha256_file(semantic / "cache_manifest.json")):
+            raise ValueError(f"dynamic cache does not bind registration: {sequence}")
+        score_rows = validate_index_payloads(dynamic, dynamic / "cache_index.jsonl", "score map")
+        track_rows = _read_jsonl(dynamic / "dynamic_tracks.jsonl", "dynamic tracks")
+        diagnostic_rows = validate_index_payloads(dynamic, dynamic / "diagnostics_index.jsonl", "diagnostic")
+        if len(score_rows) != semantic_manifest.expected_frame_count or len(track_rows) < 0:
+            raise ValueError(f"dynamic cache frame/track count mismatch: {sequence}")
         facts[sequence] = {"semantic_manifest_sha256": sha256_file(semantic / "cache_manifest.json"), "dynamic_manifest_sha256": sha256_file(dynamic / "cache_manifest.json")}
     return facts
 
@@ -206,14 +271,43 @@ def _validate_metrics(asset_root: Path) -> dict[str, Any]:
     return {"summary_sha256": sha256_file(summary_path), "artifacts": identities}
 
 
+def _validate_formal_runs(asset_root: Path) -> dict[str, Any]:
+    """Replay every registered P08 condition without rewriting the artifact root."""
+    root = asset_root / "runs/ovorb2_tum_v1"
+    registration = _read_json(root / "study_registration.json", "study registration")
+    matrix = read_run_matrix(root / "run_matrix.csv")
+    if len(matrix) != 60:
+        raise ValueError("formal matrix does not contain exactly 60 conditions")
+    valid = 0
+    manifest_hashes: dict[str, str] = {}
+    for condition in matrix:
+        mode, sequence, seed = str(condition["mode"]), str(condition["sequence_id"]), int(condition["seed"])
+        attempts = sorted((root / mode / sequence / f"seed-{seed}").glob("attempt-*"))
+        if len(attempts) != 1:
+            raise ValueError(f"formal run is missing or duplicated: {mode}/{sequence}/{seed}")
+        ok, reason, _ = validate_attempt(attempts[0], condition, registration)
+        if not ok:
+            raise ValueError(f"formal run validation failed {mode}/{sequence}/{seed}: {reason}")
+        manifest = attempts[0] / "run_manifest.json"
+        manifest_hashes[f"{mode}/{sequence}/{seed}"] = sha256_file(manifest)
+        valid += 1
+    return {"registration_sha256": sha256_file(root / "study_registration.json"), "matrix_sha256": sha256_file(root / "run_matrix.csv"), "valid_runs": valid, "run_manifest_hashes": manifest_hashes}
+
+
 def _validate_maps(asset_root: Path, repository_root: Path, output_root: Path) -> dict[str, Any]:
     facts: dict[str, Any] = {}
+    expected_roots = {
+        "fr1_desk": asset_root / "artifacts/maps/smoke-semantic-feedback-fr1_desk-seed-23011-attempt-002",
+        "fr3_walking_xyz": asset_root / "artifacts/maps/smoke-semantic-feedback-fr3_walking_xyz-seed-23011-attempt-001",
+    }
     for sequence in ("fr1_desk", "fr3_walking_xyz"):
         integrity = asset_root / "artifacts/maps" / f"{sequence}-integrity.json"
         value = _read_json(integrity, f"map integrity {sequence}")
         if value.get("valid") is not True or not isinstance(value.get("map_root"), str):
             raise ValueError(f"invalid map integrity: {sequence}")
         map_root = Path(str(value["map_root"]))
+        if map_root.resolve() != expected_roots[sequence].resolve():
+            raise ValueError(f"map integrity redirects expected root: {sequence}")
         if not map_root.is_dir():
             raise ValueError(f"map root absent: {map_root}")
         report = output_root / "map-validation" / f"{sequence}.json"
@@ -276,6 +370,7 @@ def run_reproduction(repository_root: Path, asset_root: Path, output_root: Path,
         smoke_facts = _smoke(repository_root, asset_root, output_root, python)
     stages.append({"name": "smoke", "ok": True, "facts": smoke_facts})
     metrics = _validate_metrics(asset_root)
+    metrics["formal_runs"] = _validate_formal_runs(asset_root)
     stages.append({"name": "metrics", "ok": True, "facts": metrics})
     maps = _validate_maps(asset_root, repository_root, output_root)
     stages.append({"name": "map-validate", "ok": True, "facts": maps})

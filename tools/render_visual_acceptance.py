@@ -15,8 +15,14 @@ from typing import Any
 import cv2
 import numpy as np
 
-
 ROOT = Path(__file__).resolve().parents[1]
+import sys
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from semantic_py.openvocab_slam.cache import read_cache_frame
+from semantic_py.openvocab_slam.schemas import decode_binary_mask_rle
+
 
 
 def sha256(path: Path) -> str:
@@ -83,8 +89,20 @@ def diagnostic_image(asset_root: Path, frame_id: int, fraction: float, destinati
         raise ValueError(f"invalid fixed diagnostic source {frame_id}")
     score_u8 = np.clip(score * 255, 0, 255).astype(np.uint8)
     heat = cv2.applyColorMap(score_u8, cv2.COLORMAP_TURBO)
-    mask = (score >= 0.70)
-    masked = raw.copy(); masked[mask] = (0, 220, 0)
+    semantic_index = [json.loads(row) for row in (asset_root / "cache/semantic/v1/fr3_walking_xyz/cache_index.jsonl").read_text(encoding="utf-8").splitlines() if row.strip()]
+    entry = next((item for item in semantic_index if int(item["frame_id"]) == frame_id), None)
+    if entry is None:
+        raise ValueError(f"semantic packet absent for diagnostic {frame_id}")
+    packet_path = asset_root / "cache/semantic/v1/fr3_walking_xyz" / str(entry["path"])
+    packet = read_cache_frame(packet_path)
+    masked = raw.copy()
+    colors = ((0, 220, 0), (255, 0, 255), (0, 180, 255), (255, 180, 0))
+    for index, instance in enumerate(packet.instances):
+        instance_mask = decode_binary_mask_rle(instance.mask_rle)
+        if instance_mask.shape != score.shape:
+            raise ValueError("semantic mask dimensions differ from score map")
+        color = np.asarray(colors[index % len(colors)], dtype=np.uint8)
+        masked[instance_mask] = (0.35 * masked[instance_mask] + 0.65 * color).astype(np.uint8)
     orb = cv2.ORB_create(nfeatures=1000)
     keypoints = orb.detect(raw, None)
     retained = raw.copy()
@@ -93,7 +111,7 @@ def diagnostic_image(asset_root: Path, frame_id: int, fraction: float, destinati
         if 0 <= x < score.shape[1] and 0 <= y < score.shape[0]:
             color = (0, 255, 255) if score[y, x] < 0.70 else (0, 0, 255)
             cv2.circle(retained, (x, y), 2, color, -1)
-    labels = ["RGB", "dynamic mask (green: score ≥0.70)", "dynamic score (0–1)", "ORB points (yellow retained; red filtered)"]
+    labels = ["RGB", "semantic instance masks", "dynamic score 0-1", "ORB yellow kept red filtered"]
     panes = [raw, masked, heat, retained]
     label_h = 34
     canvas = np.zeros((2 * (raw.shape[0] + label_h), 2 * raw.shape[1], 3), dtype=np.uint8)
@@ -103,7 +121,7 @@ def diagnostic_image(asset_root: Path, frame_id: int, fraction: float, destinati
         cv2.putText(canvas, labels[index], (x + 8, y + raw.shape[0] + 23), cv2.FONT_HERSHEY_SIMPLEX, .52, (255, 255, 255), 1, cv2.LINE_AA)
     cv2.putText(canvas, f"fr3_walking_xyz frame {frame_id} ({fraction:.0%}, frozen causal cache)", (8, 22), cv2.FONT_HERSHEY_SIMPLEX, .58, (255, 255, 255), 1, cv2.LINE_AA)
     cv2.imwrite(str(destination), canvas)
-    return [rgb, scores, destination]
+    return [rgb, scores, packet_path, destination]
 
 
 def query_rows(objects: list[dict[str, Any]], query: str) -> str:

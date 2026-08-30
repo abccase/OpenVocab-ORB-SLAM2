@@ -14,7 +14,7 @@ See [architecture](docs/ARCHITECTURE.md), the [experiment card](docs/EXPERIMENT_
 
 ## Build and test
 
-Ubuntu 22.04, C++17, CMake, OpenCV, Eigen, Python 3, NumPy, Open3D, and the Python packages in `requirements/semantic.lock` are the compatibility target. H01 datasets, model weights, caches, runs, maps, and reports are deliberately ignored and never fetched by these commands.
+Ubuntu 22.04, C++11, CMake, OpenCV, Eigen, Python 3, NumPy, Open3D, and the Python packages in `requirements/semantic.lock` are the compatibility target. H01 datasets, model weights, caches, runs, maps, and reports are deliberately ignored and never fetched by these commands.
 
 ```bash
 ./build.sh

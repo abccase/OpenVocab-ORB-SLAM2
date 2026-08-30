@@ -63,6 +63,19 @@ def test_clean_reproduction_attaches_external_assets_by_symlink(tmp_path: Path) 
     assert (checkout / "external").resolve() == assets / "external"
 
 
+def test_payload_index_rejects_missing_and_corrupt_payloads(tmp_path: Path) -> None:
+    module = load_reproduction_module()
+    index = tmp_path / "index.jsonl"
+    index.write_text('{"path":"score_maps/000000.npy","sha256":"' + "0" * 64 + '"}\n', encoding="utf-8")
+
+    try:
+        module.validate_index_payloads(tmp_path, index, "score map")
+    except ValueError as error:
+        assert "missing" in str(error)
+    else:
+        raise AssertionError("missing indexed payload must fail closed")
+
+
 def test_primary_checkout_keeps_its_existing_external_assets(tmp_path: Path) -> None:
     module = load_reproduction_module()
     (tmp_path / "external").mkdir()

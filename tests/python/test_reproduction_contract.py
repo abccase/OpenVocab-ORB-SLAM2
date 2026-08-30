@@ -49,3 +49,25 @@ def test_reproduction_uses_the_project_fresh_build_entrypoint() -> None:
     assert module.fresh_build_command(REPOSITORY_ROOT, REPOSITORY_ROOT / "unused") == [
         "bash", str(REPOSITORY_ROOT / "build.sh")
     ]
+
+
+def test_clean_reproduction_attaches_external_assets_by_symlink(tmp_path: Path) -> None:
+    module = load_reproduction_module()
+    checkout, assets = tmp_path / "checkout", tmp_path / "assets"
+    checkout.mkdir()
+    (assets / "external").mkdir(parents=True)
+
+    module.attach_asset_links(checkout, assets)
+
+    assert (checkout / "external").is_symlink()
+    assert (checkout / "external").resolve() == assets / "external"
+
+
+def test_primary_checkout_keeps_its_existing_external_assets(tmp_path: Path) -> None:
+    module = load_reproduction_module()
+    (tmp_path / "external").mkdir()
+
+    module.attach_asset_links(tmp_path, tmp_path)
+
+    assert (tmp_path / "external").is_dir()
+    assert not (tmp_path / "external").is_symlink()

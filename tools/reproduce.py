@@ -60,6 +60,21 @@ def resolve_python(asset_root: Path) -> Path:
     return declared if declared.is_file() else Path(sys.executable)
 
 
+def attach_asset_links(repository_root: Path, asset_root: Path) -> None:
+    """Expose ignored external sources required by the full unit contract."""
+    source = asset_root / "external"
+    destination = repository_root / "external"
+    if not source.is_dir():
+        raise ValueError(f"asset root lacks external dependencies: {source}")
+    if repository_root.resolve() == asset_root.resolve():
+        return
+    if destination.exists() or destination.is_symlink():
+        if destination.is_symlink() and destination.resolve() == source.resolve():
+            return
+        raise ValueError(f"refusing to replace existing external path: {destination}")
+    destination.symlink_to(source, target_is_directory=True)
+
+
 def fresh_build_command(repository_root: Path, build_dir: Path) -> list[str]:
     """Use the project entrypoint because it builds generated g2o headers too."""
     del build_dir  # build.sh owns a complete isolated in-tree build graph.
@@ -239,6 +254,7 @@ def run_reproduction(repository_root: Path, asset_root: Path, output_root: Path,
     output_root = output_root.resolve()
     output_root.mkdir(parents=True, exist_ok=True)
     python = resolve_python(asset_root)
+    attach_asset_links(repository_root, asset_root)
     stages: list[dict[str, Any]] = []
     stages.append({"name": "preflight", "ok": True, "asset_root": str(asset_root), "repository_root": str(repository_root), "no_download_path": True})
     if smoke:

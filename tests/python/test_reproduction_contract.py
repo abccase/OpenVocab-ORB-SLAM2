@@ -76,6 +76,20 @@ def test_payload_index_rejects_missing_and_corrupt_payloads(tmp_path: Path) -> N
         raise AssertionError("missing indexed payload must fail closed")
 
 
+def test_dynamic_completion_rejects_tampered_tracks_hash(tmp_path: Path) -> None:
+    module = load_reproduction_module()
+    for name in ("cache_manifest.json", "cache_index.jsonl", "dynamic_tracks.jsonl", "semantic_identity.jsonl", "diagnostics_index.jsonl"):
+        (tmp_path / name).write_text("x", encoding="utf-8")
+    completion = {key: "0" * 64 for key in ("manifest_sha256", "index_sha256", "tracks_sha256", "semantic_identity_sha256", "diagnostics_index_sha256")}
+    completion["frame_count"] = 1
+    try:
+        module.validate_dynamic_completion(tmp_path, completion, 1)
+    except ValueError as error:
+        assert "completion" in str(error)
+    else:
+        raise AssertionError("tampered dynamic completion must fail closed")
+
+
 def test_primary_checkout_keeps_its_existing_external_assets(tmp_path: Path) -> None:
     module = load_reproduction_module()
     (tmp_path / "external").mkdir()

@@ -162,6 +162,19 @@ def validate_index_payloads(root: Path, index_path: Path, label: str) -> list[di
     return rows
 
 
+def validate_dynamic_completion(root: Path, completion: dict[str, Any], frame_count: int) -> None:
+    fields = {
+        "manifest_sha256": "cache_manifest.json", "index_sha256": "cache_index.jsonl",
+        "tracks_sha256": "dynamic_tracks.jsonl", "semantic_identity_sha256": "semantic_identity.jsonl",
+        "diagnostics_index_sha256": "diagnostics_index.jsonl",
+    }
+    for field, name in fields.items():
+        if completion.get(field) != sha256_file(root / name):
+            raise ValueError(f"dynamic completion hash mismatch: {field}")
+    if completion.get("frame_count") != frame_count:
+        raise ValueError("dynamic completion frame_count mismatch")
+
+
 def _command_stage(name: str, command: Sequence[str], cwd: Path, output_root: Path) -> dict[str, Any]:
     started = _utc_now()
     completed = subprocess.run(list(command), cwd=cwd, text=True, capture_output=True, check=False)
@@ -225,6 +238,13 @@ def _validate_caches(asset_root: Path) -> dict[str, Any]:
                 raise ValueError(f"unbound {kind} cache completion: {sequence}")
             if completion.get("index_sha256") != sha256_file(index):
                 raise ValueError(f"unbound {kind} cache index: {sequence}")
+        if sha256_file(semantic / "cache_manifest.json") != registration_dataset["semantic_manifest_sha256"]:
+            raise ValueError(f"semantic cache manifest hash mismatch: {sequence}")
+        expected_identity = registration_dataset["cache_identity"]
+        for field, expected_hash in expected_identity.items():
+            name = {"manifest_sha256": "cache_manifest.json", "index_sha256": "cache_index.jsonl", "completion_sha256": "cache_complete.json"}[field]
+            if sha256_file(dynamic / name) != expected_hash:
+                raise ValueError(f"dynamic cache registration identity mismatch: {sequence}/{field}")
         semantic_manifest = CacheManifest.from_primitive(_read_json(semantic / "cache_manifest.json", "semantic cache manifest"))
         if (semantic_manifest.source_tree_sha256 != registration_dataset["source_tree_sha256"] or
                 semantic_manifest.association_sha256 != registration_dataset["association_sha256"] or
@@ -239,9 +259,17 @@ def _validate_caches(asset_root: Path) -> dict[str, Any]:
                 dynamic_manifest.get("semantic_manifest_sha256") != sha256_file(semantic / "cache_manifest.json")):
             raise ValueError(f"dynamic cache does not bind registration: {sequence}")
         score_rows = validate_index_payloads(dynamic, dynamic / "cache_index.jsonl", "score map")
-        track_rows = _read_jsonl(dynamic / "dynamic_tracks.jsonl", "dynamic tracks")
+        semantic_rows = _read_jsonl(semantic / "cache_index.jsonl", "semantic index")
+        semantic_by_frame = {int(row["frame_id"]): row for row in semantic_rows}
+        for row in score_rows:
+            matching = semantic_by_frame.get(int(row["frame_id"]))
+            if matching is None or row.get("semantic_packet_sha256") != matching.get("sha256"):
+                raise ValueError(f"dynamic score map packet binding mismatch: {sequence}")
+        _read_jsonl(dynamic / "dynamic_tracks.jsonl", "dynamic tracks")
         diagnostic_rows = validate_index_payloads(dynamic, dynamic / "diagnostics_index.jsonl", "diagnostic")
-        if len(score_rows) != semantic_manifest.expected_frame_count or len(track_rows) < 0:
+        completion = _read_json(dynamic / "cache_complete.json", "dynamic cache completion")
+        validate_dynamic_completion(dynamic, completion, len(score_rows))
+        if len(score_rows) != semantic_manifest.expected_frame_count:
             raise ValueError(f"dynamic cache frame/track count mismatch: {sequence}")
         facts[sequence] = {"semantic_manifest_sha256": sha256_file(semantic / "cache_manifest.json"), "dynamic_manifest_sha256": sha256_file(dynamic / "cache_manifest.json")}
     return facts

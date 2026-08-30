@@ -3,16 +3,16 @@
 Tracked source is intentionally separate from ignored H01 data, model weights, caches, runs, maps, figures, reports, and local control-plane state. A clean checkout must name an existing controlled asset root:
 
 ```bash
-venv/semantic-gpu/bin/python tools/reproduce.py \
+/abs/primary/OpenVocab-ORB-SLAM2/venv/semantic-gpu/bin/python tools/reproduce.py \
   --asset-root /abs/primary/OpenVocab-ORB-SLAM2 \
   --output-root /abs/primary/OpenVocab-ORB-SLAM2/reports/final/reproduction-<commit> \
   --validate-existing --smoke
 
-venv/semantic-gpu/bin/python tools/render_visual_acceptance.py \
+/abs/primary/OpenVocab-ORB-SLAM2/venv/semantic-gpu/bin/python tools/render_visual_acceptance.py \
   --asset-root /abs/primary/OpenVocab-ORB-SLAM2 \
   --output /abs/primary/OpenVocab-ORB-SLAM2/reports/final
 
-venv/semantic-gpu/bin/python tools/reproduce.py \
+/abs/primary/OpenVocab-ORB-SLAM2/venv/semantic-gpu/bin/python tools/reproduce.py \
   --asset-root /abs/primary/OpenVocab-ORB-SLAM2 \
   --output-root /tmp/openvocab-delivery-validation --validate-existing
 ```

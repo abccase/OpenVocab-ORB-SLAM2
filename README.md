@@ -27,16 +27,16 @@ ctest --test-dir build --output-on-failure
 Use a clean checkout and explicitly point it at a controlled existing asset root. The command has no H01 download path and writes atomic logs/manifests outside Git. Run the executed reproduction first, render the delivery from its validated evidence, then run the delivery-validation pass:
 
 ```bash
-venv/semantic-gpu/bin/python tools/reproduce.py \
+/absolute/path/to/primary/OpenVocab-ORB-SLAM2/venv/semantic-gpu/bin/python tools/reproduce.py \
   --asset-root /absolute/path/to/primary/OpenVocab-ORB-SLAM2 \
   --output-root /absolute/path/to/primary/OpenVocab-ORB-SLAM2/reports/final/reproduction-<commit> \
   --validate-existing --smoke
 
-venv/semantic-gpu/bin/python tools/render_visual_acceptance.py \
+/absolute/path/to/primary/OpenVocab-ORB-SLAM2/venv/semantic-gpu/bin/python tools/render_visual_acceptance.py \
   --asset-root /absolute/path/to/primary/OpenVocab-ORB-SLAM2 \
   --output /absolute/path/to/primary/OpenVocab-ORB-SLAM2/reports/final
 
-venv/semantic-gpu/bin/python tools/reproduce.py \
+/absolute/path/to/primary/OpenVocab-ORB-SLAM2/venv/semantic-gpu/bin/python tools/reproduce.py \
   --asset-root /absolute/path/to/primary/OpenVocab-ORB-SLAM2 \
   --output-root /tmp/openvocab-delivery-validation \
   --validate-existing

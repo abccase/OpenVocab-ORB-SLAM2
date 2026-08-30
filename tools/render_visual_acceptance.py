@@ -77,17 +77,44 @@ def require_output_artifact(root: Path, outputs: object, relative: str, label: s
 
 
 def find_reproduction_identity(asset_root: Path, commit: str) -> dict[str, Any]:
+    required_stages = ["preflight", "build", "unit", "data-validate", "cache-validate", "smoke", "metrics", "map-validate"]
     for path in sorted((asset_root / "reports/final").glob("reproduction-*/reproduction_manifest.json"), reverse=True):
         try:
             value = read_json_object(path, "reproduction manifest")
         except ValueError:
             continue
-        if value.get("valid") is not True or value.get("repository_commit") != commit:
+        if (value.get("valid") is not True or value.get("repository_commit") != commit or
+                value.get("contract_stages") != required_stages or value.get("contract_observed") != required_stages):
             continue
-        stages = {item.get("name"): item for item in value.get("stages", []) if isinstance(item, dict)}
+        stage_rows = value.get("stages")
+        if (not isinstance(stage_rows, list) or len(stage_rows) != len(required_stages) or
+                [item.get("name") for item in stage_rows if isinstance(item, dict)] != required_stages or
+                any(not isinstance(item, dict) or item.get("ok") is not True for item in stage_rows)):
+            continue
+        stages = {item["name"]: item for item in stage_rows}
         build_hash = stages.get("build", {}).get("log_sha256")
         unit_hash = stages.get("unit", {}).get("log_sha256")
         if not all(isinstance(item, str) and len(item) == 64 for item in (build_hash, unit_hash)):
+            continue
+        logs_valid = True
+        for stage_name, expected_hash in (("build", build_hash), ("unit", unit_hash)):
+            log_value = stages[stage_name].get("log")
+            if not isinstance(log_value, str):
+                logs_valid = False
+                break
+            log_path = Path(log_value)
+            if not log_path.is_absolute():
+                log_path = asset_root / log_path
+            resolved = log_path.resolve()
+            try:
+                resolved.relative_to(asset_root.resolve())
+            except ValueError:
+                logs_valid = False
+                break
+            if not resolved.is_file() or sha256(resolved) != expected_hash:
+                logs_valid = False
+                break
+        if not logs_valid:
             continue
         return {
             "status": "valid", "repository_commit": commit,

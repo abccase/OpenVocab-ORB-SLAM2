@@ -90,13 +90,29 @@ def test_delivery_reproduction_identity_requires_matching_commit(tmp_path: Path)
     pending = module.find_reproduction_identity(tmp_path, "current")
     assert pending == {"status": "pending_pre_h02_clean_reproduction", "repository_commit": "current"}
 
+    reproduction.write_text(json.dumps({"valid": True, "repository_commit": "current", "stages": [
+        {"name": "build", "ok": True, "log_sha256": "a" * 64},
+        {"name": "unit", "ok": True, "log_sha256": "b" * 64},
+    ]}), encoding="utf-8")
+    assert module.find_reproduction_identity(tmp_path, "current") == {
+        "status": "pending_pre_h02_clean_reproduction", "repository_commit": "current"
+    }
+
+    logs = reproduction.parent / "logs"
+    logs.mkdir()
+    build_log, unit_log = logs / "build.log", logs / "unit.log"
+    build_log.write_text("build passed\n", encoding="utf-8")
+    unit_log.write_text("unit passed\n", encoding="utf-8")
+    stages = ["preflight", "build", "unit", "data-validate", "cache-validate", "smoke", "metrics", "map-validate"]
+    stage_rows = [{"name": name, "ok": True} for name in stages]
+    stage_rows[1].update({"log": str(build_log), "log_sha256": module.sha256(build_log)})
+    stage_rows[2].update({"log": str(unit_log), "log_sha256": module.sha256(unit_log)})
     reproduction.write_text(json.dumps({
-        "valid": True,
-        "repository_commit": "current",
-        "stages": [{"name": "build", "log_sha256": "a" * 64}, {"name": "unit", "log_sha256": "b" * 64}],
+        "valid": True, "repository_commit": "current", "contract_stages": stages,
+        "contract_observed": stages, "stages": stage_rows,
     }), encoding="utf-8")
     identity = module.find_reproduction_identity(tmp_path, "current")
     assert identity["status"] == "valid"
     assert identity["manifest_sha256"] == module.sha256(reproduction)
-    assert identity["build_log_sha256"] == "a" * 64
-    assert identity["unit_log_sha256"] == "b" * 64
+    assert identity["build_log_sha256"] == module.sha256(build_log)
+    assert identity["unit_log_sha256"] == module.sha256(unit_log)

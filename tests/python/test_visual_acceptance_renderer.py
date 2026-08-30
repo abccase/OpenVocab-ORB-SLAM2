@@ -14,3 +14,5 @@ def test_renderer_contract_embeds_masks_and_self_contained_panels() -> None:
     assert "data:image/" in source
     assert 'src="visual_assets/' in source  # validator must reject local assets
     assert "minimum_render_width_px" in source
+    assert "GPL-3.0-or-later" in source
+    assert "test_build_identity" in source

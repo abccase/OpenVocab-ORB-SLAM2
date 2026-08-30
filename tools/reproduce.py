@@ -34,6 +34,11 @@ SEQUENCES = (
     "fr1_desk", "fr1_room", "fr3_sitting_halfsphere", "fr3_sitting_xyz",
     "fr3_walking_halfsphere", "fr3_walking_xyz",
 )
+VISUAL_PANELS = (
+    "paired-formal-trajectories", "fixed-diagnostics-25-50-75",
+    "static-tsdf-and-boxes", "queries-chair-monitor-person",
+    "success-and-limitation", "p06-online-timing",
+)
 
 
 @dataclass(frozen=True)
@@ -140,6 +145,138 @@ def _read_jsonl(path: Path, label: str) -> list[dict[str, Any]]:
     if not all(isinstance(row, dict) for row in rows):
         raise ValueError(f"invalid {label}: expected JSON objects")
     return rows
+
+
+def _asset_file(asset_root: Path, value: object, label: str) -> Path:
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"invalid {label} path")
+    path = Path(value)
+    if not path.is_absolute():
+        path = asset_root / path
+    try:
+        resolved = path.resolve(strict=True)
+        resolved.relative_to(asset_root.resolve())
+    except (FileNotFoundError, ValueError) as error:
+        raise ValueError(f"{label} is absent or outside asset root: {path}") from error
+    if not resolved.is_file():
+        raise ValueError(f"{label} is not a file: {resolved}")
+    return resolved
+
+
+def _require_file_hash(path: Path, expected: object, label: str) -> str:
+    actual = sha256_file(path)
+    if not isinstance(expected, str) or actual != expected:
+        raise ValueError(f"{label} hash mismatch")
+    return actual
+
+
+def _validate_existing_execution_evidence(
+    asset_root: Path, delivery: dict[str, Any], repository_commit: str
+) -> dict[str, Any]:
+    identity = delivery.get("test_build_identity")
+    if not isinstance(identity, dict) or identity.get("status") != "valid":
+        raise ValueError("missing executed reproduction evidence: test/build identity")
+    if identity.get("repository_commit") != repository_commit:
+        raise ValueError("executed reproduction evidence commit mismatch")
+    manifest_path = _asset_file(asset_root, identity.get("manifest_path"), "executed reproduction manifest")
+    manifest_sha256 = _require_file_hash(
+        manifest_path, identity.get("manifest_sha256"), "executed reproduction manifest"
+    )
+    manifest = _read_json(manifest_path, "executed reproduction manifest")
+    expected = load_reproduction_plan().stages
+    stages = manifest.get("stages")
+    if (manifest.get("valid") is not True or manifest.get("repository_commit") != repository_commit or
+            manifest.get("contract_stages") != expected or manifest.get("contract_observed") != expected or
+            not isinstance(stages, list) or [row.get("name") for row in stages if isinstance(row, dict)] != expected or
+            not all(isinstance(row, dict) and row.get("ok") is True for row in stages)):
+        raise ValueError("executed reproduction evidence does not satisfy the exact eight-stage contract")
+    by_name = {str(row["name"]): row for row in stages}
+    logs: dict[str, str] = {}
+    for name, identity_field in (("build", "build_log_sha256"), ("unit", "unit_log_sha256")):
+        stage = by_name[name]
+        try:
+            log = _asset_file(asset_root, stage.get("log"), f"executed {name} log")
+            digest = _require_file_hash(log, stage.get("log_sha256"), f"executed {name} log")
+        except ValueError as error:
+            raise ValueError(f"missing executed reproduction evidence: {name} log") from error
+        if identity.get(identity_field) != digest:
+            raise ValueError(f"executed reproduction evidence identity mismatch: {name} log")
+        logs[name] = digest
+    smoke = by_name["smoke"].get("facts")
+    if not isinstance(smoke, dict) or set(smoke) != {"baseline", "semantic-feedback"}:
+        raise ValueError("missing executed reproduction evidence: baseline and semantic-feedback smoke")
+    smoke_manifests: dict[str, str] = {}
+    for mode in ("baseline", "semantic-feedback"):
+        item = smoke[mode]
+        if not isinstance(item, dict) or not isinstance(item.get("stage"), dict) or item["stage"].get("ok") is not True:
+            raise ValueError(f"missing executed reproduction evidence: {mode} smoke stage")
+        manifest_file = _asset_file(asset_root, item.get("manifest"), f"executed {mode} smoke manifest")
+        digest = _require_file_hash(manifest_file, item.get("manifest_sha256"), f"executed {mode} smoke manifest")
+        run = _read_json(manifest_file, f"executed {mode} smoke manifest")
+        if run.get("valid") is not True or run.get("mode") != mode or run.get("sequence_id") != "fr3_walking_xyz":
+            raise ValueError(f"executed reproduction evidence has invalid {mode} smoke manifest")
+        smoke_stage = item["stage"]
+        smoke_log = _asset_file(asset_root, smoke_stage.get("log"), f"executed {mode} smoke log")
+        _require_file_hash(smoke_log, smoke_stage.get("log_sha256"), f"executed {mode} smoke log")
+        smoke_manifests[mode] = digest
+    return {
+        "status": "validated-existing-execution",
+        "manifest": str(manifest_path),
+        "manifest_sha256": manifest_sha256,
+        "logs": logs,
+        "smoke_manifest_sha256": smoke_manifests,
+    }
+
+
+def _validate_final_delivery(asset_root: Path, repository_commit: str) -> dict[str, Any]:
+    final = asset_root / "reports/final"
+    delivery_path = final / "delivery_manifest.json"
+    delivery = _read_json(delivery_path, "delivery manifest")
+    if delivery.get("final_commit") != repository_commit:
+        raise ValueError("delivery manifest final commit mismatch")
+    execution = _validate_existing_execution_evidence(asset_root, delivery, repository_commit)
+    report = delivery.get("report")
+    if not isinstance(report, dict):
+        raise ValueError("delivery manifest lacks final report identities")
+    final_report = final / "FINAL_REPORT.md"
+    sheet = final / "visual_acceptance_sheet.html"
+    sources_path = final / "visual_acceptance_sources.json"
+    _require_file_hash(final_report, report.get("final_report_sha256"), "final report")
+    sheet_sha256 = _require_file_hash(
+        sheet, report.get("visual_acceptance_sheet_sha256"), "visual acceptance sheet"
+    )
+    sources_sha256 = _require_file_hash(
+        sources_path, report.get("source_manifest_sha256"), "visual source manifest"
+    )
+    for name, item in report.get("p08_artifacts", {}).items():
+        if not isinstance(item, dict):
+            raise ValueError(f"malformed delivery P08 artifact: {name}")
+        artifact = _asset_file(asset_root, item.get("path"), f"delivery P08 artifact {name}")
+        _require_file_hash(artifact, item.get("sha256"), f"delivery P08 artifact {name}")
+    sources = _read_json(sources_path, "visual source manifest")
+    if sources.get("self_contained") is not True or sources.get("panels") != list(VISUAL_PANELS):
+        raise ValueError("visual source manifest does not contain the required self-contained panels")
+    sheet_item = sources.get("sheet")
+    if not isinstance(sheet_item, dict):
+        raise ValueError("visual source manifest lacks sheet identity")
+    bound_sheet = _asset_file(asset_root, sheet_item.get("path"), "visual source sheet")
+    if bound_sheet != sheet.resolve() or sheet_item.get("sha256") != sheet_sha256:
+        raise ValueError("visual source manifest sheet identity mismatch")
+    source_rows = sources.get("sources")
+    if not isinstance(source_rows, list) or not source_rows:
+        raise ValueError("visual source manifest contains no sources")
+    for index, item in enumerate(source_rows):
+        if not isinstance(item, dict):
+            raise ValueError(f"malformed visual source identity: {index}")
+        source = _asset_file(asset_root, item.get("path"), f"visual source {index}")
+        _require_file_hash(source, item.get("sha256"), f"visual source {index}")
+    return {
+        "delivery_manifest_sha256": sha256_file(delivery_path),
+        "visual_acceptance_sheet_sha256": sheet_sha256,
+        "visual_source_manifest_sha256": sources_sha256,
+        "visual_source_count": len(source_rows),
+        "execution": execution,
+    }
 
 
 def validate_index_payloads(root: Path, index_path: Path, label: str) -> list[dict[str, Any]]:
@@ -377,6 +514,10 @@ def run_reproduction(repository_root: Path, asset_root: Path, output_root: Path,
     output_root.mkdir(parents=True, exist_ok=True)
     python = resolve_python(asset_root)
     attach_asset_links(repository_root, asset_root)
+    repository_commit = subprocess.check_output(
+        ["git", "rev-parse", "HEAD"], cwd=repository_root, text=True
+    ).strip()
+    delivery_validation = _validate_final_delivery(asset_root, repository_commit) if validate_existing and not smoke else None
     stages: list[dict[str, Any]] = []
     stages.append({"name": "preflight", "ok": True, "asset_root": str(asset_root), "repository_root": str(repository_root), "no_download_path": True})
     if smoke:
@@ -388,14 +529,24 @@ def run_reproduction(repository_root: Path, asset_root: Path, output_root: Path,
         if not stages[-1]["ok"]:
             raise ValueError(f"unit tests failed; see {stages[-1]['log']}")
     else:
-        stages.extend([{ "name": "build", "ok": True, "status": "not rerun by --validate-existing" }, { "name": "unit", "ok": True, "status": "not rerun by --validate-existing" }])
+        if delivery_validation is None:
+            raise ValueError("missing executed reproduction evidence for --validate-existing")
+        execution = delivery_validation["execution"]
+        stages.extend([
+            {"name": "build", "ok": True, "status": "validated existing executed evidence", "facts": execution},
+            {"name": "unit", "ok": True, "status": "validated existing executed evidence", "facts": execution},
+        ])
     data = _validate_data(asset_root)
     stages.append({"name": "data-validate", "ok": True, "facts": data})
     caches = _validate_caches(asset_root)
     stages.append({"name": "cache-validate", "ok": True, "facts": caches})
-    smoke_facts: dict[str, Any] = {"status": "not requested"}
+    smoke_facts: dict[str, Any]
     if smoke:
         smoke_facts = _smoke(repository_root, asset_root, output_root, python)
+    else:
+        if delivery_validation is None:
+            raise ValueError("missing executed reproduction evidence for --validate-existing smoke")
+        smoke_facts = delivery_validation["execution"]
     stages.append({"name": "smoke", "ok": True, "facts": smoke_facts})
     metrics = _validate_metrics(asset_root)
     metrics["formal_runs"] = _validate_formal_runs(asset_root)
@@ -404,7 +555,12 @@ def run_reproduction(repository_root: Path, asset_root: Path, output_root: Path,
     stages.append({"name": "map-validate", "ok": True, "facts": maps})
     expected = load_reproduction_plan().stages
     actual = [stage["name"] for stage in stages if stage["name"] in expected]
-    return {"schema_version": 1, "created_utc": _utc_now(), "repository_commit": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repository_root, text=True).strip(), "asset_root": str(asset_root), "stages": stages, "contract_stages": expected, "contract_observed": actual, "valid": True}
+    return {
+        "schema_version": 1, "created_utc": _utc_now(),
+        "repository_commit": repository_commit, "asset_root": str(asset_root),
+        "stages": stages, "contract_stages": expected, "contract_observed": actual,
+        "delivery_validation": delivery_validation, "valid": True,
+    }
 
 
 def main(argv: Sequence[str] | None = None) -> int:

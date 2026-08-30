@@ -24,16 +24,25 @@ ctest --test-dir build --output-on-failure
 
 ## Reproduce approved artifacts
 
-Use a clean checkout and explicitly point it at a controlled existing asset root. The command has no H01 download path and writes atomic logs/manifests outside Git.
+Use a clean checkout and explicitly point it at a controlled existing asset root. The command has no H01 download path and writes atomic logs/manifests outside Git. Run the executed reproduction first, render the delivery from its validated evidence, then run the delivery-validation pass:
 
 ```bash
-python3 tools/reproduce.py \
+venv/semantic-gpu/bin/python tools/reproduce.py \
   --asset-root /absolute/path/to/primary/OpenVocab-ORB-SLAM2 \
-  --output-root /tmp/openvocab-reproduction \
+  --output-root /absolute/path/to/primary/OpenVocab-ORB-SLAM2/reports/final/reproduction-<commit> \
   --validate-existing --smoke
+
+venv/semantic-gpu/bin/python tools/render_visual_acceptance.py \
+  --asset-root /absolute/path/to/primary/OpenVocab-ORB-SLAM2 \
+  --output /absolute/path/to/primary/OpenVocab-ORB-SLAM2/reports/final
+
+venv/semantic-gpu/bin/python tools/reproduce.py \
+  --asset-root /absolute/path/to/primary/OpenVocab-ORB-SLAM2 \
+  --output-root /tmp/openvocab-delivery-validation \
+  --validate-existing
 ```
 
-The stage order is fixed: `preflight`, `build`, `unit`, `data-validate`, `cache-validate`, `smoke`, `metrics`, `map-validate`. `--smoke` runs one bounded `fr3_walking_xyz` baseline and one frozen-cache `semantic-feedback` run; it never treats online IPC as formal semantics. [REPRODUCIBILITY.md](docs/REPRODUCIBILITY.md) describes identities and failure behavior.
+The stage order is fixed: `preflight`, `build`, `unit`, `data-validate`, `cache-validate`, `smoke`, `metrics`, `map-validate`. `--smoke` runs one bounded `fr3_walking_xyz` baseline and one frozen-cache `semantic-feedback` run; it never treats online IPC as formal semantics. The final validate-only pass does not pretend to rerun those three stages: it requires their exact-commit logs and smoke manifests, then checks `FINAL_REPORT.md`, the self-contained H02 sheet, its source manifest and every listed source, and the delivery-manifest hashes. [REPRODUCIBILITY.md](docs/REPRODUCIBILITY.md) describes identities and failure behavior.
 
 ## Provenance and licensing
 

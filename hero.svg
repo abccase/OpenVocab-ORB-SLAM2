@@ -1,0 +1,88 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="400" viewBox="0 0 1200 400" role="img" aria-labelledby="hero-title hero-desc">
+  <title id="hero-title">OpenVocab-ORB-SLAM2</title>
+  <desc id="hero-desc">A reproducible open-vocabulary semantic-feedback reconstruction around ORB-SLAM2, with separate baseline, frozen-cache formal, and asynchronous online paths.</desc>
+
+  <defs>
+    <linearGradient id="hero-bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b0f14"/>
+      <stop offset="1" stop-color="#111820"/>
+    </linearGradient>
+    <marker id="arrow-cyan" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#2dd4bf"/>
+    </marker>
+    <marker id="arrow-gray" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#73808c"/>
+    </marker>
+    <marker id="arrow-amber" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#f59e0b"/>
+    </marker>
+  </defs>
+
+  <rect width="1200" height="400" rx="28" fill="url(#hero-bg)"/>
+  <path d="M 724 32 V 368" stroke="#26303a" stroke-width="1"/>
+
+  <g id="title-block" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif">
+    <text x="58" y="60" fill="#2dd4bf" font-size="18" font-weight="700" letter-spacing="2.2">REPRODUCIBLE RESEARCH RECONSTRUCTION</text>
+    <text x="58" y="126" fill="#f5f7fa" font-size="56" font-weight="760" letter-spacing="-1.8">OpenVocab</text>
+    <text x="58" y="186" fill="#f5f7fa" font-size="56" font-weight="760" letter-spacing="-1.8">ORB-SLAM2</text>
+    <text x="58" y="235" fill="#a9b4bf" font-size="23">Open-vocabulary semantic feedback around</text>
+    <text x="58" y="267" fill="#a9b4bf" font-size="23">an ORB-SLAM2 RGB-D compatibility baseline.</text>
+
+    <g transform="translate(58 307)" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="600">
+      <rect width="166" height="38" rx="8" fill="#17212a" stroke="#33404b"/>
+      <circle cx="20" cy="19" r="5" fill="#2dd4bf"/>
+      <text x="34" y="25" fill="#dce3e9">FROZEN CACHE</text>
+
+      <rect x="178" width="151" height="38" rx="8" fill="#17212a" stroke="#33404b"/>
+      <circle cx="198" cy="19" r="5" fill="#f59e0b"/>
+      <text x="212" y="25" fill="#dce3e9">FAIL CLOSED</text>
+
+      <rect x="341" width="166" height="38" rx="8" fill="#17212a" stroke="#33404b"/>
+      <circle cx="361" cy="19" r="5" fill="#73808c"/>
+      <text x="375" y="25" fill="#dce3e9">NEUTRAL RESULT</text>
+    </g>
+  </g>
+
+  <g id="project-proof" transform="translate(760 34)" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif">
+    <text x="0" y="24" fill="#8e9aa5" font-size="15" font-weight="650" letter-spacing="1.1">THREE PATHS · ONE EVIDENCE BOUNDARY</text>
+
+    <rect x="0" y="48" width="382" height="58" rx="12" fill="#151d25" stroke="#33404b"/>
+    <text x="18" y="72" fill="#8e9aa5" font-size="16" font-weight="700">INPUT</text>
+    <text x="18" y="94" fill="#f5f7fa" font-size="21" font-weight="650">TUM RGB-D sequence</text>
+
+    <path d="M 38 106 V 132 H 78" fill="none" stroke="#73808c" stroke-width="2" marker-end="url(#arrow-gray)"/>
+    <path d="M 191 106 V 132" fill="none" stroke="#2dd4bf" stroke-width="2" marker-end="url(#arrow-cyan)"/>
+    <path d="M 344 106 V 132 H 304" fill="none" stroke="#f59e0b" stroke-width="2" marker-end="url(#arrow-amber)"/>
+
+    <g transform="translate(0 142)">
+      <rect width="116" height="98" rx="12" fill="#141b22" stroke="#52606d"/>
+      <circle cx="18" cy="20" r="5" fill="#73808c"/>
+      <text x="30" y="26" fill="#dce3e9" font-size="18" font-weight="700">Baseline</text>
+      <text x="14" y="56" fill="#8e9aa5" font-size="16">No semantic</text>
+      <text x="14" y="79" fill="#8e9aa5" font-size="16">input read</text>
+
+      <rect x="133" width="116" height="98" rx="12" fill="#112521" stroke="#2dd4bf"/>
+      <circle cx="151" cy="20" r="5" fill="#2dd4bf"/>
+      <text x="163" y="26" fill="#dffcf7" font-size="18" font-weight="700">Formal</text>
+      <text x="147" y="56" fill="#8ddfd3" font-size="16">Frozen cache</text>
+      <text x="147" y="79" fill="#8ddfd3" font-size="16">or hard fail</text>
+
+      <rect x="266" width="116" height="98" rx="12" fill="#281f11" stroke="#f59e0b"/>
+      <circle cx="284" cy="20" r="5" fill="#f59e0b"/>
+      <text x="296" y="26" fill="#fff4d6" font-size="18" font-weight="700">Online</text>
+      <text x="280" y="56" fill="#f8c86a" font-size="16">Async demo</text>
+      <text x="280" y="79" fill="#f8c86a" font-size="16">or baseline</text>
+    </g>
+
+    <g transform="translate(0 260)">
+      <rect width="382" height="84" rx="12" fill="#0e141a" stroke="#26303a"/>
+      <path d="M 127 14 V 70 M 254 14 V 70" stroke="#26303a"/>
+      <text x="18" y="40" fill="#f5f7fa" font-size="28" font-weight="760">60/60</text>
+      <text x="18" y="63" fill="#8e9aa5" font-size="15">valid runs</text>
+      <text x="145" y="40" fill="#f5f7fa" font-size="19" font-weight="760">+0.000408</text>
+      <text x="145" y="63" fill="#8e9aa5" font-size="14">ATE Δ (m)</text>
+      <text x="280" y="40" fill="#f59e0b" font-size="23" font-weight="760">NEUTRAL</text>
+      <text x="280" y="63" fill="#8e9aa5" font-size="14">result class</text>
+    </g>
+  </g>
+</svg>

@@ -47,7 +47,7 @@ The original ORB-SLAM2 code and attribution are preserved. The reconstruction la
 ## System architecture
 
 <p align="center">
-  <img src="./architecture.svg" width="100%" alt="Three-path architecture separating baseline, frozen-cache formal evaluation, and asynchronous online demonstration">
+  <img src="./architecture.svg" width="120%" alt="Three-path architecture separating baseline, frozen-cache formal evaluation, and asynchronous online demonstration">
 </p>
 
 The architecture deliberately separates three evidence paths:

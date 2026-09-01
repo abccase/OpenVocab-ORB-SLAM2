@@ -1,103 +1,121 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="650" viewBox="0 0 1200 650" role="img" aria-labelledby="arch-title arch-desc">
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="740" viewBox="0 0 1200 740" role="img" aria-labelledby="arch-title arch-desc">
   <title id="arch-title">OpenVocab-ORB-SLAM2 architecture</title>
-  <desc id="arch-desc">An RGB-D input feeds separate baseline, frozen-cache formal semantic-feedback, asynchronous online demonstration, and static semantic-map paths.</desc>
+  <desc id="arch-desc">RGB-D input feeds separate ORB-SLAM2 baseline, frozen-cache semantic-feedback, asynchronous online demonstration, and static semantic-map paths.</desc>
 
   <defs>
-    <marker id="arch-arrow-gray" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+    <marker id="arrow-gray" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
       <path d="M 0 0 L 10 5 L 0 10 z" fill="#73808c"/>
     </marker>
-    <marker id="arch-arrow-cyan" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+    <marker id="arrow-cyan" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
       <path d="M 0 0 L 10 5 L 0 10 z" fill="#2dd4bf"/>
     </marker>
   </defs>
 
-  <rect width="1200" height="650" rx="28" fill="#0b0f14"/>
+  <rect width="1200" height="740" rx="28" fill="#0b0f14"/>
 
   <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif">
     <text x="54" y="57" fill="#f5f7fa" font-size="38" font-weight="760">Evidence-separated architecture</text>
     <text x="54" y="88" fill="#8e9aa5" font-size="19">Formal results never consume the asynchronous demonstration path.</text>
 
-    <g id="input" transform="translate(54 127)">
-      <rect width="154" height="388" rx="16" fill="#141b22" stroke="#33404b" stroke-width="1.5"/>
-      <text x="20" y="33" fill="#8e9aa5" font-size="17" font-weight="700" letter-spacing="1.2">INPUT</text>
-      <circle cx="77" cy="112" r="39" fill="#1d2730" stroke="#73808c" stroke-width="2"/>
-      <rect x="51" y="94" width="52" height="36" rx="7" fill="none" stroke="#dce3e9" stroke-width="2"/>
-      <circle cx="77" cy="112" r="9" fill="none" stroke="#dce3e9" stroke-width="2"/>
-      <path d="M 58 94 L 65 84 H 89 L 96 94" fill="none" stroke="#dce3e9" stroke-width="2"/>
-      <text x="34" y="174" fill="#f5f7fa" font-size="22" font-weight="700">RGB-D</text>
-      <text x="30" y="200" fill="#8e9aa5" font-size="18">frames + depth</text>
-      <path d="M 22 231 H 132" stroke="#33404b"/>
-      <text x="20" y="266" fill="#dce3e9" font-size="18">TUM sequence</text>
-      <text x="20" y="298" fill="#8e9aa5" font-size="17">timestamps</text>
-      <text x="20" y="326" fill="#8e9aa5" font-size="17">camera intrinsics</text>
-      <text x="20" y="354" fill="#8e9aa5" font-size="17">depth scale</text>
+    <g id="input-panel">
+      <rect x="54" y="126" width="200" height="470" rx="16" fill="#141b22" stroke="#33404b" stroke-width="1.5"/>
+      <text x="78" y="160" fill="#8e9aa5" font-size="17" font-weight="700" letter-spacing="1.2">INPUT</text>
+
+      <circle cx="154" cy="220" r="40" fill="#1d2730" stroke="#73808c" stroke-width="2"/>
+      <rect x="127" y="202" width="54" height="36" rx="7" fill="none" stroke="#dce3e9" stroke-width="2"/>
+      <circle cx="154" cy="220" r="9" fill="none" stroke="#dce3e9" stroke-width="2"/>
+      <path d="M 134 202 L 141 192 H 167 L 174 202" fill="none" stroke="#dce3e9" stroke-width="2"/>
+
+      <text x="120" y="284" fill="#f5f7fa" font-size="22" font-weight="700">RGB-D</text>
+      <text x="83" y="314" fill="#8e9aa5" font-size="18">frames + depth</text>
+      <path d="M 78 344 H 230" stroke="#33404b"/>
+      <text x="78" y="381" fill="#dce3e9" font-size="18">TUM sequence</text>
+      <text x="78" y="416" fill="#8e9aa5" font-size="17">timestamps</text>
+      <text x="78" y="448" fill="#8e9aa5" font-size="17">camera model</text>
+      <text x="78" y="480" fill="#8e9aa5" font-size="17">depth scale</text>
     </g>
 
     <g id="baseline-lane">
-      <rect x="244" y="127" width="902" height="92" rx="15" fill="#11171d" stroke="#3b4650"/>
-      <rect x="244" y="127" width="8" height="92" rx="4" fill="#73808c"/>
-      <text x="270" y="156" fill="#aeb8c1" font-size="17" font-weight="750" letter-spacing="1.2">BASELINE · CONTROL</text>
-      <rect x="437" y="146" width="234" height="54" rx="10" fill="#192129" stroke="#52606d"/>
-      <text x="462" y="179" fill="#f5f7fa" font-size="20" font-weight="650">Original RGB-D API</text>
-      <rect x="771" y="146" width="238" height="54" rx="10" fill="#192129" stroke="#52606d"/>
-      <text x="799" y="179" fill="#f5f7fa" font-size="20" font-weight="650">ORB-SLAM2 tracking</text>
-      <path d="M 208 173 H 437" fill="none" stroke="#73808c" stroke-width="2.2" marker-end="url(#arch-arrow-gray)"/>
-      <path d="M 671 173 H 771" fill="none" stroke="#73808c" stroke-width="2.2" marker-end="url(#arch-arrow-gray)"/>
-      <text x="1029" y="166" fill="#8e9aa5" font-size="16">no semantic</text>
-      <text x="1029" y="190" fill="#8e9aa5" font-size="16">assets read</text>
+      <rect x="278" y="126" width="868" height="120" rx="15" fill="#11171d" stroke="#3b4650"/>
+      <rect x="278" y="126" width="8" height="120" rx="4" fill="#73808c"/>
+      <text x="302" y="155" fill="#aeb8c1" font-size="17" font-weight="750" letter-spacing="1.2">BASELINE · CONTROL</text>
+
+      <rect x="302" y="170" width="230" height="56" rx="10" fill="#192129" stroke="#52606d"/>
+      <text x="321" y="205" fill="#f5f7fa" font-size="18" font-weight="650">Original RGB-D API</text>
+
+      <rect x="570" y="170" width="246" height="56" rx="10" fill="#192129" stroke="#52606d"/>
+      <text x="588" y="205" fill="#f5f7fa" font-size="18" font-weight="650">ORB-SLAM2 tracking</text>
+
+      <rect x="840" y="170" width="282" height="56" rx="10" fill="#151d25" stroke="#33404b"/>
+      <text x="858" y="193" fill="#8e9aa5" font-size="16">no semantic assets</text>
+      <text x="858" y="215" fill="#8e9aa5" font-size="16">read</text>
+
+      <path d="M 254 198 H 302" fill="none" stroke="#73808c" stroke-width="2.2" marker-end="url(#arrow-gray)"/>
+      <path d="M 532 198 H 570" fill="none" stroke="#73808c" stroke-width="2.2" marker-end="url(#arrow-gray)"/>
+      <path d="M 816 198 H 840" fill="none" stroke="#73808c" stroke-width="2.2" marker-end="url(#arrow-gray)"/>
     </g>
 
     <g id="formal-lane">
-      <rect x="244" y="239" width="902" height="164" rx="15" fill="#0e1d1b" stroke="#206d64"/>
-      <rect x="244" y="239" width="8" height="164" rx="4" fill="#2dd4bf"/>
-      <text x="270" y="269" fill="#65d9ca" font-size="17" font-weight="750" letter-spacing="1.2">FORMAL · FROZEN SEMANTIC FEEDBACK</text>
+      <rect x="278" y="266" width="868" height="190" rx="15" fill="#0e1d1b" stroke="#206d64"/>
+      <rect x="278" y="266" width="8" height="190" rx="4" fill="#2dd4bf"/>
+      <text x="302" y="295" fill="#65d9ca" font-size="17" font-weight="750" letter-spacing="1.2">FORMAL · FROZEN SEMANTIC FEEDBACK</text>
 
-      <rect x="270" y="289" width="175" height="82" rx="10" fill="#132825" stroke="#2d786f"/>
-      <text x="289" y="320" fill="#dffcf7" font-size="20" font-weight="700">Grounding DINO</text>
-      <text x="289" y="348" fill="#8ddfd3" font-size="17">open-vocab boxes</text>
+      <rect x="302" y="316" width="197" height="108" rx="10" fill="#132825" stroke="#2d786f"/>
+      <text x="318" y="355" fill="#dffcf7" font-size="18" font-weight="700">Grounding DINO</text>
+      <text x="318" y="388" fill="#8ddfd3" font-size="16">open-vocab boxes</text>
 
-      <rect x="479" y="289" width="145" height="82" rx="10" fill="#132825" stroke="#2d786f"/>
-      <text x="523" y="320" fill="#dffcf7" font-size="20" font-weight="700">SAM</text>
-      <text x="500" y="348" fill="#8ddfd3" font-size="17">instance masks</text>
+      <rect x="517" y="316" width="160" height="108" rx="10" fill="#132825" stroke="#2d786f"/>
+      <text x="575" y="355" fill="#dffcf7" font-size="18" font-weight="700">SAM</text>
+      <text x="535" y="388" fill="#8ddfd3" font-size="16">instance masks</text>
 
-      <rect x="658" y="289" width="190" height="82" rx="10" fill="#132825" stroke="#2d786f"/>
-      <text x="681" y="320" fill="#dffcf7" font-size="20" font-weight="700">Causal motion</text>
-      <text x="683" y="348" fill="#8ddfd3" font-size="17">association + state</text>
+      <rect x="695" y="316" width="190" height="108" rx="10" fill="#132825" stroke="#2d786f"/>
+      <text x="711" y="355" fill="#dffcf7" font-size="18" font-weight="700">Causal motion</text>
+      <text x="711" y="388" fill="#8ddfd3" font-size="16">association + state</text>
 
-      <rect x="882" y="278" width="232" height="104" rx="10" fill="#11302b" stroke="#2dd4bf" stroke-width="1.5"/>
-      <text x="903" y="308" fill="#dffcf7" font-size="19" font-weight="700">Frozen score cache</text>
-      <text x="903" y="335" fill="#8ddfd3" font-size="16">immutable identity</text>
-      <text x="903" y="360" fill="#8ddfd3" font-size="16">mismatch → hard fail</text>
+      <rect x="903" y="316" width="219" height="108" rx="10" fill="#11302b" stroke="#2dd4bf" stroke-width="1.5"/>
+      <text x="919" y="346" fill="#dffcf7" font-size="18" font-weight="700">Frozen cache</text>
+      <text x="919" y="376" fill="#8ddfd3" font-size="16">immutable identity</text>
+      <text x="919" y="402" fill="#8ddfd3" font-size="16">mismatch → hard fail</text>
 
-      <path d="M 208 321 H 270" fill="none" stroke="#2dd4bf" stroke-width="2.2" marker-end="url(#arch-arrow-cyan)"/>
-      <path d="M 445 330 H 479" fill="none" stroke="#2dd4bf" stroke-width="2.2" marker-end="url(#arch-arrow-cyan)"/>
-      <path d="M 624 330 H 658" fill="none" stroke="#2dd4bf" stroke-width="2.2" marker-end="url(#arch-arrow-cyan)"/>
-      <path d="M 848 330 H 882" fill="none" stroke="#2dd4bf" stroke-width="2.2" marker-end="url(#arch-arrow-cyan)"/>
+      <path d="M 254 370 H 302" fill="none" stroke="#2dd4bf" stroke-width="2.2" marker-end="url(#arrow-cyan)"/>
+      <path d="M 499 370 H 517" fill="none" stroke="#2dd4bf" stroke-width="2.2" marker-end="url(#arrow-cyan)"/>
+      <path d="M 677 370 H 695" fill="none" stroke="#2dd4bf" stroke-width="2.2" marker-end="url(#arrow-cyan)"/>
+      <path d="M 885 370 H 903" fill="none" stroke="#2dd4bf" stroke-width="2.2" marker-end="url(#arrow-cyan)"/>
     </g>
 
     <g id="consumers-lane">
-      <rect x="244" y="423" width="902" height="92" rx="15" fill="#101b1a" stroke="#285b55"/>
-      <text x="270" y="452" fill="#65d9ca" font-size="17" font-weight="750" letter-spacing="1.2">FORMAL CONSUMERS</text>
-      <rect x="437" y="442" width="234" height="54" rx="10" fill="#142522" stroke="#2d786f"/>
-      <text x="464" y="475" fill="#dffcf7" font-size="20" font-weight="650">Feature mask policy</text>
-      <rect x="771" y="442" width="238" height="54" rx="10" fill="#142522" stroke="#2d786f"/>
-      <text x="800" y="475" fill="#dffcf7" font-size="20" font-weight="650">RGB-D tracking</text>
-      <path d="M 998 382 V 411 H 554 V 442" fill="none" stroke="#2dd4bf" stroke-width="2.2" marker-end="url(#arch-arrow-cyan)"/>
-      <path d="M 671 469 H 771" fill="none" stroke="#2dd4bf" stroke-width="2.2" marker-end="url(#arch-arrow-cyan)"/>
-      <text x="1029" y="461" fill="#8ddfd3" font-size="16">trajectory +</text>
-      <text x="1029" y="485" fill="#8ddfd3" font-size="16">telemetry</text>
+      <rect x="278" y="476" width="868" height="120" rx="15" fill="#101b1a" stroke="#285b55"/>
+      <rect x="278" y="476" width="8" height="120" rx="4" fill="#2dd4bf"/>
+      <text x="302" y="500" fill="#65d9ca" font-size="17" font-weight="750" letter-spacing="1.2">FORMAL CONSUMERS</text>
+
+      <rect x="302" y="520" width="240" height="56" rx="10" fill="#142522" stroke="#2d786f"/>
+      <text x="318" y="555" fill="#dffcf7" font-size="18" font-weight="650">Feature mask policy</text>
+
+      <rect x="580" y="520" width="190" height="56" rx="10" fill="#142522" stroke="#2d786f"/>
+      <text x="597" y="555" fill="#dffcf7" font-size="18" font-weight="650">RGB-D tracking</text>
+
+      <rect x="808" y="520" width="314" height="56" rx="10" fill="#132825" stroke="#285b55"/>
+      <text x="824" y="555" fill="#8ddfd3" font-size="16">trajectory + telemetry</text>
+
+      <path d="M 1012 424 V 465 H 560 V 512 H 422 V 520" fill="none" stroke="#2dd4bf" stroke-width="2.2" marker-end="url(#arrow-cyan)"/>
+      <path d="M 542 548 H 580" fill="none" stroke="#2dd4bf" stroke-width="2.2" marker-end="url(#arrow-cyan)"/>
+      <path d="M 770 548 H 808" fill="none" stroke="#2dd4bf" stroke-width="2.2" marker-end="url(#arrow-cyan)"/>
     </g>
 
-    <g id="online-and-map" transform="translate(54 543)">
-      <rect width="1092" height="70" rx="14" fill="#16140f" stroke="#67501c"/>
-      <rect width="8" height="70" rx="4" fill="#f59e0b"/>
-      <text x="26" y="29" fill="#f8c86a" font-size="17" font-weight="750" letter-spacing="1.2">ISOLATED OUTPUT PATHS</text>
-      <text x="26" y="54" fill="#aab4bd" font-size="17">Online:</text>
-      <text x="87" y="54" fill="#fff4d6" font-size="17">async service → ZeroMQ ≤5 Hz → age gate → online state or baseline</text>
-      <path d="M 653 17 V 55" stroke="#67501c"/>
-      <text x="680" y="29" fill="#65d9ca" font-size="17" font-weight="750">MAP:</text>
-      <text x="731" y="29" fill="#dffcf7" font-size="17">poses + cache + depth</text>
-      <text x="680" y="54" fill="#8ddfd3" font-size="17">static TSDF · objects · dynamic tracks</text>
+    <g id="online-output">
+      <rect x="54" y="620" width="560" height="90" rx="14" fill="#16140f" stroke="#67501c"/>
+      <rect x="54" y="620" width="8" height="90" rx="4" fill="#f59e0b"/>
+      <text x="78" y="647" fill="#f8c86a" font-size="17" font-weight="750" letter-spacing="1.2">ONLINE · ISOLATED DEMONSTRATION</text>
+      <text x="78" y="674" fill="#fff4d6" font-size="16">async service → ZeroMQ ≤5 Hz</text>
+      <text x="78" y="699" fill="#aab4bd" font-size="16">age gate → online state or baseline</text>
+    </g>
+
+    <g id="map-output">
+      <rect x="632" y="620" width="514" height="90" rx="14" fill="#101b1a" stroke="#285b55"/>
+      <rect x="632" y="620" width="8" height="90" rx="4" fill="#2dd4bf"/>
+      <text x="656" y="647" fill="#65d9ca" font-size="17" font-weight="750" letter-spacing="1.2">MAP · REPRESENTATIVE EXPORTS</text>
+      <text x="656" y="674" fill="#dffcf7" font-size="16">poses + cache + depth</text>
+      <text x="656" y="699" fill="#8ddfd3" font-size="16">static TSDF · objects · dynamic tracks</text>
     </g>
   </g>
 </svg>
